@@ -1,10 +1,11 @@
-FROM pytorch/pytorch:2.4.0-cuda12.4-cudnn9-devel
+# FROM pytorch/pytorch:2.4.0-cuda12.4-cudnn9-devel
+FROM pytorch/pytorch:2.4.1-cuda12.1-cudnn9-devel
+
 
 USER root
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-LABEL github_repo="https://github.com/SWivid/F5-TTS"
 
 RUN set -x \
     && apt-get update \
@@ -13,14 +14,15 @@ RUN set -x \
     && apt-get install -y librdmacm1 libibumad3 librdmacm-dev libibverbs1 libibverbs-dev ibverbs-utils ibverbs-providers \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
-    
+
 WORKDIR /workspace
 
-RUN git clone https://github.com/SWivid/F5-TTS.git \
-    && cd F5-TTS \
-    && git submodule update --init --recursive \
-    && pip install -e . --no-cache-dir
-
+# RUN git clone https://github.com/SWivid/F5-TTS.git \
+#     && cd F5-TTS \
+#     && git submodule update --init --recursive \
+#     && pip install -e . --no-cache-dir
+COPY . ./F5-TTS/
+RUN  cd F5-TTS && pip install -e . --no-cache-dir
 ENV SHELL=/bin/bash
-
+RUN pip install tensorboard cached_path
 WORKDIR /workspace/F5-TTS

@@ -238,3 +238,40 @@ If our work and codebase is useful for you, please cite as:
 ## License
 
 Our code is released under MIT License. The pre-trained models are licensed under the CC-BY-NC license due to the training data Emilia, which is an in-the-wild dataset. Sorry for any inconvenience this may cause.
+
+
+
+## setups
+
+
+
+ln -s /media/anhlbt/Book/datasets/datasets_voice/VOICE_TASK/vivos_edited/* vivos_char
+unlink 
+
+_letters =  '0123456789aáảàãạâấẩầẫậăắẳằẵặbcdđeéẻèẽẹêếểềễệfghiíỉìĩịjklmnoóỏòõọôốổồỗộơớởờỡợpqrstuúủùũụưứửừữựvwxyýỷỳỹỵz,.:'
+
+vocab = 0,1,2,3,4,5,6,7,8,9,a,á,ả,à,ã,ạ,â,ấ,ẩ,ầ,ẫ,ậ,ă,ắ,ẳ,ằ,ẵ,ặ,b,c,d,đ,e,é,ẻ,è,ẽ,ẹ,ê,ế,ể,ề,ễ,ệ,f,g,h,i,í,ỉ,ì,ĩ,ị,j,k,l,m,n,o,ó,ỏ,ò,õ,ọ,ô,ố,ổ,ồ,ỗ,ộ,ơ,ớ,ở,ờ,ỡ,ợ,p,q,r,s,t,u,ú,ủ,ù,ũ,ụ,ư,ứ,ử,ừ,ữ,ự,v,w,x,y,ý,ỷ,ỳ,ỹ,ỵ,z,,,.,:
+
+install deepspeed==0.14.4
+
+## vivoice_plus
+ln -s /media/anhlbt/SSD2/viVoice/* /media/anhlbt/SSD2/workspace/VOICE_TASK/F5-TTS/data/vivoice_char
+
+
+# # Liên kết tất cả file từ nguồn 1
+ln -s /media/anhlbt/Book/train_bert/wavs/*.wav /media/anhlbt/SSD2/workspace/VOICE_TASK/F5-TTS/data/vivoice_plus/wavs/
+# # Liên kết tất cả file từ nguồn viVoice
+ln -s /media/anhlbt/SSD2/viVoice/*.wav /media/anhlbt/SSD2/workspace/VOICE_TASK/F5-TTS/data/vivoice_plus/wavs/
+
+
+```bash
+for file in /media/anhlbt/SSD2/viVoice/wavs/*.wav; do
+    echo "$file"
+    ln -sf "$file" /media/anhlbt/SSD2/workspace/VOICE_TASK/F5-TTS/data/vivoice_plus/wavs/
+done
+
+
+```
+
+
+

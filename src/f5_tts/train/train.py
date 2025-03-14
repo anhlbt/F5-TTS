@@ -4,19 +4,32 @@ import os
 from importlib.resources import files
 
 import hydra
+from os.path import dirname, realpath, join
+import sys
 
+C_DIR = dirname(realpath(__file__))
+P_DIR = dirname(dirname(C_DIR))
+sys.path.insert(0, P_DIR)
 from f5_tts.model import CFM, DiT, Trainer, UNetT
 from f5_tts.model.dataset import load_dataset
 from f5_tts.model.utils import get_tokenizer
 
-os.chdir(str(files("f5_tts").joinpath("../..")))  # change working directory to root of project (local editable)
+os.chdir(
+    str(files("f5_tts").joinpath("../.."))
+)  # change working directory to root of project (local editable)
 
 
-@hydra.main(version_base="1.3", config_path=str(files("f5_tts").joinpath("configs")), config_name=None)
+@hydra.main(
+    version_base="1.3",
+    config_path=str(files("f5_tts").joinpath("configs")),
+    config_name=None,
+)
 def main(cfg):
     tokenizer = cfg.model.tokenizer
     mel_spec_type = cfg.model.mel_spec.mel_spec_type
-    exp_name = f"{cfg.model.name}_{mel_spec_type}_{cfg.model.tokenizer}_{cfg.datasets.name}"
+    exp_name = (
+        f"{cfg.model.name}_{mel_spec_type}_{cfg.model.tokenizer}_{cfg.datasets.name}"
+    )
 
     # set text tokenizer
     if tokenizer != "custom":
@@ -33,7 +46,11 @@ def main(cfg):
     wandb_resume_id = None
 
     model = CFM(
-        transformer=model_cls(**cfg.model.arch, text_num_embeds=vocab_size, mel_dim=cfg.model.mel_spec.n_mel_channels),
+        transformer=model_cls(
+            **cfg.model.arch,
+            text_num_embeds=vocab_size,
+            mel_dim=cfg.model.mel_spec.n_mel_channels,
+        ),
         mel_spec_kwargs=cfg.model.mel_spec,
         vocab_char_map=vocab_char_map,
     )
@@ -64,7 +81,9 @@ def main(cfg):
         local_vocoder_path=cfg.model.vocoder.local_path,
     )
 
-    train_dataset = load_dataset(cfg.datasets.name, tokenizer, mel_spec_kwargs=cfg.model.mel_spec)
+    train_dataset = load_dataset(
+        cfg.datasets.name, tokenizer, mel_spec_kwargs=cfg.model.mel_spec
+    )
     trainer.train(
         train_dataset,
         num_workers=cfg.datasets.num_workers,

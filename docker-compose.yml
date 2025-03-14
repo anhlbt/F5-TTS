@@ -1,0 +1,42 @@
+version: "3.8"
+
+services:
+  f5-tts:
+    shm_size: "16gb"
+    hostname: f5-tts
+    container_name: f5-tts
+    build:
+      context: . # Sử dụng thư mục hiện tại chứa Dockerfile
+      dockerfile: Dockerfile # Tên file Dockerfile của bạn
+      args:
+        - DEVICE=cuda
+    # image: f5-tts:local  # Tên image sẽ được build
+    volumes:
+      - ./:/workspace/F5-TTS/ # Mount thư mục local F5-TTS vào container
+      - /media/anhlbt/SSD1/cache:/root/.cache
+      - /tmp/.X11-unix/:/tmp/.X11-unix
+      - /media/anhlbt/Book/datasets/datasets_voice/VOICE_TASK/vivos_edited:/workspace/F5-TTS/data/vivos_char
+      - /media/anhlbt/SSD2/viVoice:/workspace/F5-TTS/data/vivoice_char
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all # Cho phép sử dụng tất cả GPU NVIDIA
+      - SHELL=/bin/bash # Đặt shell mặc định
+      - TZ=Asia/Ho_Chi_Minh
+      - DISPLAY=${DISPLAY}
+      - WORK_DIR=/workspace/F5-TTS
+      - HF_HOME=/root/.cache/huggingface/hub
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              # count: 1  # Số lượng GPU, có thể đổi thành "all" nếu cần
+              device_ids: ["0", "1"]
+              capabilities: [gpu, utility, video, compute]
+      # Lệnh chạy finetune_gradio.py
+    network_mode: "host"
+    # command: "python src/f5_tts/train/finetune_gradio.py"
+    entrypoint: ["/bin/sh", "./run_finetune_gradio.sh"]
+    tty: true # Giữ container chạy tương tác
+    stdin_open: true # Cho phép nhập liệu từ terminal
+    # ports:
+    #   - "7860:7860"  # Map port cho Gradio (web interface)
