@@ -1,20 +1,13 @@
 import argparse
 import os
 import shutil
-import sys
-
-from os.path import dirname, realpath, join
-import sys
-
-C_DIR = dirname(realpath(__file__))
-P_DIR = dirname(dirname(C_DIR))
-sys.path.insert(0, P_DIR)
+from importlib.resources import files
 
 from cached_path import cached_path
+
 from f5_tts.model import CFM, UNetT, DiT, Trainer
 from f5_tts.model.utils import get_tokenizer
 from f5_tts.model.dataset import load_dataset
-from importlib.resources import files
 
 
 # -------------------------- Dataset Settings --------------------------- #
@@ -28,22 +21,13 @@ mel_spec_type = "vocos"  # 'vocos' or 'bigvgan'
 
 # -------------------------- Argument Parsing --------------------------- #
 def parse_args():
-    # batch_size_per_gpu = 1000 settting for gpu 8GB
-    # batch_size_per_gpu = 1600 settting for gpu 12GB
-    # batch_size_per_gpu = 2000 settting for gpu 16GB
-    # batch_size_per_gpu = 3200 settting for gpu 24GB
-
-    # num_warmup_updates = 300 for 5000 sample about 10 hours
-
-    # change save_per_updates , last_per_updates change this value what you need  ,
-
     parser = argparse.ArgumentParser(description="Train CFM Model")
 
     parser.add_argument(
         "--exp_name",
         type=str,
-        default="F5TTS_Base",
-        choices=["F5TTS_Base", "E2TTS_Base"],
+        default="F5TTS_v1_Base",
+        choices=["F5TTS_v1_Base", "F5TTS_Base", "E2TTS_Base"],
         help="Experiment name",
     )
     parser.add_argument(
@@ -151,11 +135,40 @@ def main():
     checkpoint_path = str(files("f5_tts").joinpath(f"../../ckpts/{args.dataset_name}"))
 
     # Model parameters based on experiment name
-    if args.exp_name == "F5TTS_Base":
+
+    if args.exp_name == "F5TTS_v1_Base":
         wandb_resume_id = None
         model_cls = DiT
         model_cfg = dict(
-            dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4
+            dim=1024,
+            depth=22,
+            heads=16,
+            ff_mult=2,
+            text_dim=512,
+            conv_layers=4,
+        )
+        if args.finetune:
+            if args.pretrain is None:
+                ckpt_path = str(
+                    cached_path(
+                        "hf://SWivid/F5-TTS/F5TTS_v1_Base/model_1250000.safetensors"
+                    )
+                )
+            else:
+                ckpt_path = args.pretrain
+
+    elif args.exp_name == "F5TTS_Base":
+        wandb_resume_id = None
+        model_cls = DiT
+        model_cfg = dict(
+            dim=1024,
+            depth=22,
+            heads=16,
+            ff_mult=2,
+            text_dim=512,
+            text_mask_padding=False,
+            conv_layers=4,
+            pe_attn_head=1,
         )
         if args.finetune:
             if args.pretrain is None:
@@ -164,10 +177,18 @@ def main():
                 )
             else:
                 ckpt_path = args.pretrain
+
     elif args.exp_name == "E2TTS_Base":
         wandb_resume_id = None
         model_cls = UNetT
-        model_cfg = dict(dim=1024, depth=24, heads=16, ff_mult=4)
+        model_cfg = dict(
+            dim=1024,
+            depth=24,
+            heads=16,
+            ff_mult=4,
+            text_mask_padding=False,
+            pe_attn_head=1,
+        )
         if args.finetune:
             if args.pretrain is None:
                 ckpt_path = str(
@@ -191,6 +212,7 @@ def main():
             print("copy checkpoint for finetune")
 
     # Use the tokenizer and tokenizer_path provided in the command line arguments
+
     tokenizer = args.tokenizer
     if tokenizer == "custom":
         if not args.tokenizer_path:
@@ -231,7 +253,7 @@ def main():
         save_per_updates=args.save_per_updates,
         keep_last_n_checkpoints=args.keep_last_n_checkpoints,
         checkpoint_path=checkpoint_path,
-        batch_size=args.batch_size_per_gpu,
+        batch_size_per_gpu=args.batch_size_per_gpu,
         batch_size_type=args.batch_size_type,
         max_samples=args.max_samples,
         grad_accumulation_steps=args.grad_accumulation_steps,

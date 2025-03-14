@@ -18,6 +18,7 @@
 ### Thanks to all the contributors !
 
 ## News
+- **2025/03/12**: 🔥 F5-TTS v1 base model with better training and inference performance. [Few demo](https://swivid.github.io/F5-TTS_updates).
 - **2024/10/08**: F5-TTS & E2 TTS base models on [🤗 Hugging Face](https://huggingface.co/SWivid/F5-TTS), [🤖 Model Scope](https://www.modelscope.cn/models/SWivid/F5-TTS_Emilia-ZH-EN), [🟣 Wisemodel](https://wisemodel.cn/models/SJTU_X-LANCE/F5-TTS_Emilia-ZH-EN).
 
 ## Installation
@@ -37,7 +38,7 @@ conda activate f5-tts
 
 > ```bash
 > # Install pytorch with your CUDA version, e.g.
-> pip install torch==2.3.0+cu118 torchaudio==2.3.0+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
+> pip install torch==2.4.0+cu124 torchaudio==2.4.0+cu124 --extra-index-url https://download.pytorch.org/whl/cu124
 > ```
 
 </details>
@@ -82,7 +83,7 @@ conda activate f5-tts
 > ### 1. As a pip package (if just for inference)
 > 
 > ```bash
-> pip install git+https://github.com/SWivid/F5-TTS.git
+> pip install f5-tts
 > ```
 > 
 > ### 2. Local editable (if also do training, finetuning)
@@ -158,9 +159,8 @@ volumes:
 ```bash
 # Run with flags
 # Leave --ref_text "" will have ASR model transcribe (extra GPU memory usage)
-f5-tts_infer-cli \
---model "F5-TTS" \
---ref_audio "ref_audio.wav" \
+f5-tts_infer-cli --model F5TTS_v1_Base \
+--ref_audio "provide_prompt_wav_path_here.wav" \
 --ref_text "The content, subtitle or transcription of reference audio." \
 --gen_text "Some text you want TTS model generate for you."
 
@@ -181,14 +181,18 @@ f5-tts_infer-cli -c src/f5_tts/infer/examples/multi/story.toml
 
 ## Training
 
-### 1. Gradio App
+### 1. With Hugging Face Accelerate
 
-Read [training & finetuning guidance](src/f5_tts/train) for more instructions.
+Refer to [training & finetuning guidance](src/f5_tts/train) for best practice.
+
+### 2. With Gradio App
 
 ```bash
 # Quick start with Gradio web interface
 f5-tts_finetune-gradio
 ```
+
+Read [training & finetuning guidance](src/f5_tts/train) for more instructions.
 
 
 ## [Evaluation](src/f5_tts/eval)
