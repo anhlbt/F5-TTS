@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 from f5_tts.model.modules import MelSpec
 from f5_tts.model.utils import default
+import numpy as np
 
 
 class HFDataset(Dataset):
@@ -62,7 +63,9 @@ class HFDataset(Dataset):
         audio_tensor = torch.from_numpy(audio).float()
 
         if sample_rate != self.target_sample_rate:
-            resampler = torchaudio.transforms.Resample(sample_rate, self.target_sample_rate)
+            resampler = torchaudio.transforms.Resample(
+                sample_rate, self.target_sample_rate
+            )
             audio_tensor = resampler(audio_tensor)
 
         audio_tensor = audio_tensor.unsqueeze(0)  # 't -> 1 t')
@@ -93,8 +96,9 @@ class CustomDataset(Dataset):
         preprocessed_mel=False,
         mel_spec_module: nn.Module | None = None,
     ):
-        self.data = custom_dataset
-        self.durations = durations
+        self.data = np.array(custom_dataset)
+        # self.durations = durations
+        self.durations = np.array(durations) if durations is not None else None
         self.target_sample_rate = target_sample_rate
         self.hop_length = hop_length
         self.n_fft = n_fft
@@ -149,7 +153,9 @@ class CustomDataset(Dataset):
 
             # resample if necessary
             if source_sample_rate != self.target_sample_rate:
-                resampler = torchaudio.transforms.Resample(source_sample_rate, self.target_sample_rate)
+                resampler = torchaudio.transforms.Resample(
+                    source_sample_rate, self.target_sample_rate
+                )
                 audio = resampler(audio)
 
             # to mel spectrogram
@@ -173,7 +179,12 @@ class DynamicBatchSampler(Sampler[list[int]]):
     """
 
     def __init__(
-        self, sampler: Sampler[int], frames_threshold: int, max_samples=0, random_seed=None, drop_residual: bool = False
+        self,
+        sampler: Sampler[int],
+        frames_threshold: int,
+        max_samples=0,
+        random_seed=None,
+        drop_residual: bool = False,
     ):
         self.sampler = sampler
         self.frames_threshold = frames_threshold
@@ -182,25 +193,29 @@ class DynamicBatchSampler(Sampler[list[int]]):
         self.epoch = 0
 
         indices, batches = [], []
+
         data_source = self.sampler.data_source
 
-        for idx in tqdm(
-            self.sampler, desc="Sorting with sampler... if slow, check whether dataset is provided with duration"
-        ):
-            indices.append((idx, data_source.get_frame_len(idx)))
-        indices.sort(key=lambda elem: elem[1])
+        for idx in tqdm(self.sampler, desc="Sorting with sampler..."):
+            indices.append((idx, self.sampler.data_source.get_frame_len(idx)))
+        indices = np.array(indices, dtype=[("idx", int), ("frame_len", float)])
+        indices.sort(order="frame_len")
 
         batch = []
         batch_frames = 0
         for idx, frame_len in tqdm(
-            indices, desc=f"Creating dynamic batches with {frames_threshold} audio frames per gpu"
+            indices,
+            desc=f"Creating dynamic batches with {frames_threshold} audio frames per gpu",
         ):
-            if batch_frames + frame_len <= self.frames_threshold and (max_samples == 0 or len(batch) < max_samples):
+            if batch_frames + frame_len <= self.frames_threshold and (
+                max_samples == 0 or len(batch) < max_samples
+            ):
                 batch.append(idx)
                 batch_frames += frame_len
             else:
                 if len(batch) > 0:
-                    batches.append(batch)
+                    # batches.append(batch)
+                    batches.append(np.array(batch))
                 if frame_len <= self.frames_threshold:
                     batch = [idx]
                     batch_frames = frame_len
@@ -209,10 +224,12 @@ class DynamicBatchSampler(Sampler[list[int]]):
                     batch_frames = 0
 
         if not drop_residual and len(batch) > 0:
-            batches.append(batch)
+            # batches.append(batch)
+            batches.append(np.array(batch))
 
         del indices
-        self.batches = batches
+        # self.batches = batches
+        self.batches = np.array(batches, dtype=object)
 
         # Ensure even batches with accelerate BatchSamplerShard cls under frame_per_batch setting
         self.drop_last = True
@@ -222,15 +239,18 @@ class DynamicBatchSampler(Sampler[list[int]]):
         self.epoch = epoch
 
     def __iter__(self):
-        # Use both random_seed and epoch for deterministic but different shuffling per epoch
         if self.random_seed is not None:
             g = torch.Generator()
             g.manual_seed(self.random_seed + self.epoch)
-            # Use PyTorch's random permutation for better reproducibility across PyTorch versions
-            indices = torch.randperm(len(self.batches), generator=g).tolist()
-            batches = [self.batches[i] for i in indices]
+            # indices = torch.randperm(len(self.batches), generator=g).tolist()
+            indices = np.array(torch.randperm(len(self.batches), generator=g).tolist())
+            # Ép kiểu các chỉ số về int Python khi trả về batch
+            # batches = [[int(idx) for idx in self.batches[i]] for i in indices]
+            batches = np.array([self.batches[i] for i in indices], dtype=object)
+            batches = [[int(idx) for idx in batch] for batch in batches]
         else:
-            batches = self.batches
+            # Ép kiểu các chỉ số về int Python
+            batches = [[int(idx) for idx in batch] for batch in self.batches]
         return iter(batches)
 
     def __len__(self):
@@ -256,7 +276,9 @@ def load_dataset(
     print("Loading dataset ...")
 
     if dataset_type == "CustomDataset":
-        rel_data_path = str(files("f5_tts").joinpath(f"../../data/{dataset_name}_{tokenizer}"))
+        rel_data_path = str(
+            files("f5_tts").joinpath(f"../../data/{dataset_name}_{tokenizer}")
+        )
         if audio_type == "raw":
             try:
                 train_dataset = load_from_disk(f"{rel_data_path}/raw")
@@ -268,7 +290,8 @@ def load_dataset(
             preprocessed_mel = True
         with open(f"{rel_data_path}/duration.json", "r", encoding="utf-8") as f:
             data_dict = json.load(f)
-        durations = data_dict["duration"]
+        # durations = data_dict["duration"]
+        durations = np.array(data_dict["duration"])
         train_dataset = CustomDataset(
             train_dataset,
             durations=durations,
@@ -285,9 +308,13 @@ def load_dataset(
 
         with open(f"{dataset_name}/duration.json", "r", encoding="utf-8") as f:
             data_dict = json.load(f)
-        durations = data_dict["duration"]
+        # durations = data_dict["duration"]
+        durations = np.array(data_dict["duration"])
         train_dataset = CustomDataset(
-            train_dataset, durations=durations, preprocessed_mel=preprocessed_mel, **mel_spec_kwargs
+            train_dataset,
+            durations=durations,
+            preprocessed_mel=preprocessed_mel,
+            **mel_spec_kwargs,
         )
 
     elif dataset_type == "HFDataset":
@@ -297,7 +324,11 @@ def load_dataset(
         )
         pre, post = dataset_name.split("_")
         train_dataset = HFDataset(
-            load_dataset(f"{pre}/{pre}", split=f"train.{post}", cache_dir=str(files("f5_tts").joinpath("../../data"))),
+            load_dataset(
+                f"{pre}/{pre}",
+                split=f"train.{post}",
+                cache_dir=str(files("f5_tts").joinpath("../../data")),
+            ),
         )
 
     return train_dataset

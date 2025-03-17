@@ -32,13 +32,15 @@ class F5TTS:
         device=None,
         hf_cache_dir=None,
     ):
-        model_cfg = OmegaConf.load(str(files("f5_tts").joinpath(f"configs/{model}.yaml")))
+        model_cfg = OmegaConf.load(
+            str(files("f5_tts").joinpath(f"configs/{model}.yaml"))
+        )
         model_cls = globals()[model_cfg.model.backbone]
         model_arc = model_cfg.model.arch
 
         self.mel_spec_type = model_cfg.model.mel_spec.mel_spec_type
         self.target_sample_rate = model_cfg.model.mel_spec.target_sample_rate
-
+        self.seed = -1
         self.ode_method = ode_method
         self.use_ema = use_ema
 
@@ -50,16 +52,20 @@ class F5TTS:
             self.device = (
                 "cuda"
                 if torch.cuda.is_available()
-                else "xpu"
-                if torch.xpu.is_available()
-                else "mps"
-                if torch.backends.mps.is_available()
-                else "cpu"
+                else (
+                    "xpu"
+                    if torch.xpu.is_available()
+                    else "mps" if torch.backends.mps.is_available() else "cpu"
+                )
             )
 
         # Load models
         self.vocoder = load_vocoder(
-            self.mel_spec_type, vocoder_local_path is not None, vocoder_local_path, self.device, hf_cache_dir
+            self.mel_spec_type,
+            vocoder_local_path is not None,
+            vocoder_local_path,
+            self.device,
+            hf_cache_dir,
         )
 
         repo_name, ckpt_step, ckpt_type = "F5-TTS", 1250000, "safetensors"
@@ -79,10 +85,20 @@ class F5TTS:
 
         if not ckpt_file:
             ckpt_file = str(
-                cached_path(f"hf://SWivid/{repo_name}/{model}/model_{ckpt_step}.{ckpt_type}", cache_dir=hf_cache_dir)
+                cached_path(
+                    f"hf://SWivid/{repo_name}/{model}/model_{ckpt_step}.{ckpt_type}",
+                    cache_dir=hf_cache_dir,
+                )
             )
         self.ema_model = load_model(
-            model_cls, model_arc, ckpt_file, self.mel_spec_type, vocab_file, self.ode_method, self.use_ema, self.device
+            model_cls,
+            model_arc,
+            ckpt_file,
+            self.mel_spec_type,
+            vocab_file,
+            self.ode_method,
+            self.use_ema,
+            self.device,
         )
 
     def transcribe(self, ref_audio, language=None):
@@ -120,7 +136,9 @@ class F5TTS:
             self.seed = random.randint(0, sys.maxsize)
         seed_everything(self.seed)
 
-        ref_file, ref_text = preprocess_ref_audio_text(ref_file, ref_text, device=self.device)
+        ref_file, ref_text = preprocess_ref_audio_text(
+            ref_file, ref_text, device=self.device
+        )
 
         wav, sr, spec = infer_process(
             ref_file,
