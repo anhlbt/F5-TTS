@@ -41,15 +41,24 @@ from f5_tts.infer.utils_infer import (
 )
 
 
-DEFAULT_TTS_MODEL = "F5-TTS_v1"
+DEFAULT_TTS_MODEL = "Custom"  # "F5-TTS_v1"
 tts_model_choice = DEFAULT_TTS_MODEL
 
-DEFAULT_TTS_MODEL_CFG = [
-    "hf://SWivid/F5-TTS/F5TTS_v1_Base/model_1250000.safetensors",
-    "hf://SWivid/F5-TTS/F5TTS_v1_Base/vocab.txt",
-    json.dumps(dict(dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4)),
-]
+# DEFAULT_TTS_MODEL_CFG = [
+#     "hf://SWivid/F5-TTS/F5TTS_v1_Base/model_1250000.safetensors",
+#     "hf://SWivid/F5-TTS/F5TTS_v1_Base/vocab.txt",
+#     json.dumps(
+#         dict(dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4)
+#     ),
+# ]
 
+DEFAULT_TTS_MODEL_CFG = [
+    "/workspace/F5-TTS/ckpts/vivoice/model_last.pt",
+    "/workspace/F5-TTS/ckpts/vivoice/vocab.txt",
+    json.dumps(
+        dict(dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4)
+    ),
+]
 
 # load models
 
@@ -57,14 +66,20 @@ vocoder = load_vocoder()
 
 
 def load_f5tts():
-    ckpt_path = str(cached_path(DEFAULT_TTS_MODEL_CFG[0]))
+    # ckpt_path = str(cached_path(DEFAULT_TTS_MODEL_CFG[0]))
+    ckpt_path = str(DEFAULT_TTS_MODEL_CFG[0])
     F5TTS_model_cfg = json.loads(DEFAULT_TTS_MODEL_CFG[2])
-    return load_model(DiT, F5TTS_model_cfg, ckpt_path)
+    vocab_file = str(DEFAULT_TTS_MODEL_CFG[1])
+    return load_model(DiT, F5TTS_model_cfg, ckpt_path, vocab_file=vocab_file)
 
 
 def load_e2tts():
-    ckpt_path = str(cached_path("hf://SWivid/E2-TTS/E2TTS_Base/model_1200000.safetensors"))
-    E2TTS_model_cfg = dict(dim=1024, depth=24, heads=16, ff_mult=4, text_mask_padding=False, pe_attn_head=1)
+    ckpt_path = str(
+        cached_path("hf://SWivid/E2-TTS/E2TTS_Base/model_1200000.safetensors")
+    )
+    E2TTS_model_cfg = dict(
+        dim=1024, depth=24, heads=16, ff_mult=4, text_mask_padding=False, pe_attn_head=1
+    )
     return load_model(UNetT, E2TTS_model_cfg, ckpt_path)
 
 
@@ -105,7 +120,8 @@ def generate_response(messages, model, tokenizer):
     )
 
     generated_ids = [
-        output_ids[len(input_ids) :] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
+        output_ids[len(input_ids) :]
+        for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
     ]
     return tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
 
@@ -130,7 +146,9 @@ def infer(
         gr.Warning("Please enter text to generate.")
         return gr.update(), gr.update(), ref_text
 
-    ref_audio, ref_text = preprocess_ref_audio_text(ref_audio_orig, ref_text, show_info=show_info)
+    ref_audio, ref_text = preprocess_ref_audio_text(
+        ref_audio_orig, ref_text, show_info=show_info
+    )
 
     if model == DEFAULT_TTS_MODEL:
         ema_model = F5TTS_ema_model
@@ -145,7 +163,9 @@ def infer(
         global custom_ema_model, pre_custom_path
         if pre_custom_path != model[1]:
             show_info("Loading Custom TTS model...")
-            custom_ema_model = load_custom(model[1], vocab_path=model[2], model_cfg=model[3])
+            custom_ema_model = load_custom(
+                model[1], vocab_path=model[2], model_cfg=model[3]
+            )
             pre_custom_path = model[1]
         ema_model = custom_ema_model
 
@@ -179,13 +199,15 @@ def infer(
 
 
 with gr.Blocks() as app_credits:
-    gr.Markdown("""
+    gr.Markdown(
+        """
 # Credits
 
 * [mrfakename](https://github.com/fakerybakery) for the original [online demo](https://huggingface.co/spaces/mrfakename/E2-F5-TTS)
 * [RootingInLoad](https://github.com/RootingInLoad) for initial chunk generation and podcast app exploration
 * [jpgallegoar](https://github.com/jpgallegoar) for multiple speech-type generation & voice chat
-""")
+"""
+    )
 with gr.Blocks() as app_tts:
     gr.Markdown("# Batched TTS")
     ref_audio_input = gr.Audio(label="Reference Audio", type="filepath")
@@ -376,7 +398,9 @@ with gr.Blocks() as app_multistyle:
             row_updates[speech_type_count] = gr.update(visible=True)
             speech_type_count += 1
         else:
-            gr.Warning("Exhausted maximum number of speech types. Consider restart the app.")
+            gr.Warning(
+                "Exhausted maximum number of speech types. Consider restart the app."
+            )
         return row_updates
 
     add_speech_type_btn.click(add_speech_type_fn, outputs=speech_type_rows)
@@ -389,7 +413,12 @@ with gr.Blocks() as app_multistyle:
     for i in range(1, len(speech_type_delete_btns)):
         speech_type_delete_btns[i].click(
             delete_speech_type_fn,
-            outputs=[speech_type_rows[i], speech_type_names[i], speech_type_audios[i], speech_type_ref_texts[i]],
+            outputs=[
+                speech_type_rows[i],
+                speech_type_names[i],
+                speech_type_audios[i],
+                speech_type_ref_texts[i],
+            ],
         )
 
     # Text input for the prompt
@@ -423,7 +452,9 @@ with gr.Blocks() as app_multistyle:
         )
 
     # Generate button
-    generate_multistyle_btn = gr.Button("Generate Multi-Style Speech", variant="primary")
+    generate_multistyle_btn = gr.Button(
+        "Generate Multi-Style Speech", variant="primary"
+    )
 
     # Output audio
     audio_output_multistyle = gr.Audio(label="Synthesized Audio")
@@ -445,7 +476,10 @@ with gr.Blocks() as app_multistyle:
             speech_type_names_list, speech_type_audios_list, speech_type_ref_texts_list
         ):
             if name_input and audio_input:
-                speech_types[name_input] = {"audio": audio_input, "ref_text": ref_text_input}
+                speech_types[name_input] = {
+                    "audio": audio_input,
+                    "ref_text": ref_text_input,
+                }
             else:
                 speech_types[f"@{ref_text_idx}@"] = {"audio": "", "ref_text": ""}
             ref_text_idx += 1
@@ -464,19 +498,29 @@ with gr.Blocks() as app_multistyle:
             if style in speech_types:
                 current_style = style
             else:
-                gr.Warning(f"Type {style} is not available, will use Regular as default.")
+                gr.Warning(
+                    f"Type {style} is not available, will use Regular as default."
+                )
                 current_style = "Regular"
 
             try:
                 ref_audio = speech_types[current_style]["audio"]
             except KeyError:
                 gr.Warning(f"Please provide reference audio for type {current_style}.")
-                return [None] + [speech_types[style]["ref_text"] for style in speech_types]
+                return [None] + [
+                    speech_types[style]["ref_text"] for style in speech_types
+                ]
             ref_text = speech_types[current_style].get("ref_text", "")
 
             # Generate speech for this segment
             audio_out, _, ref_text_out = infer(
-                ref_audio, ref_text, text, tts_model_choice, remove_silence, 0, show_info=print
+                ref_audio,
+                ref_text,
+                text,
+                tts_model_choice,
+                remove_silence,
+                0,
+                show_info=print,
             )  # show_info=print no pull to top when generating
             sr, audio_data = audio_out
 
@@ -486,7 +530,9 @@ with gr.Blocks() as app_multistyle:
         # Concatenate all audio segments
         if generated_audio_segments:
             final_audio_data = np.concatenate(generated_audio_segments)
-            return [(sr, final_audio_data)] + [speech_types[style]["ref_text"] for style in speech_types]
+            return [(sr, final_audio_data)] + [
+                speech_types[style]["ref_text"] for style in speech_types
+            ]
         else:
             gr.Warning("No audio generated.")
             return [None] + [speech_types[style]["ref_text"] for style in speech_types]
@@ -570,14 +616,18 @@ Have a conversation with an AI using your reference voice!
 
             return gr.update(visible=False), gr.update(visible=True)
 
-        load_chat_model_btn.click(load_chat_model, outputs=[load_chat_model_btn, chat_interface_container])
+        load_chat_model_btn.click(
+            load_chat_model, outputs=[load_chat_model_btn, chat_interface_container]
+        )
 
     else:
         chat_interface_container = gr.Column()
 
         if chat_model_state is None:
             model_name = "Qwen/Qwen2.5-3B-Instruct"
-            chat_model_state = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype="auto", device_map="auto")
+            chat_model_state = AutoModelForCausalLM.from_pretrained(
+                model_name, torch_dtype="auto", device_map="auto"
+            )
             chat_tokenizer_state = AutoTokenizer.from_pretrained(model_name)
 
     with chat_interface_container:
@@ -644,7 +694,9 @@ Have a conversation with an AI using your reference voice!
             conv_state.append({"role": "user", "content": text})
             history.append((text, None))
 
-            response = generate_response(conv_state, chat_model_state, chat_tokenizer_state)
+            response = generate_response(
+                conv_state, chat_model_state, chat_tokenizer_state
+            )
 
             conv_state.append({"role": "assistant", "content": response})
             history[-1] = (text, response)
@@ -690,11 +742,21 @@ Have a conversation with an AI using your reference voice!
         # Handle audio input
         audio_input_chat.stop_recording(
             process_audio_input,
-            inputs=[audio_input_chat, text_input_chat, chatbot_interface, conversation_state],
+            inputs=[
+                audio_input_chat,
+                text_input_chat,
+                chatbot_interface,
+                conversation_state,
+            ],
             outputs=[chatbot_interface, conversation_state],
         ).then(
             generate_audio_response,
-            inputs=[chatbot_interface, ref_audio_chat, ref_text_chat, remove_silence_chat],
+            inputs=[
+                chatbot_interface,
+                ref_audio_chat,
+                ref_text_chat,
+                remove_silence_chat,
+            ],
             outputs=[audio_output_chat, ref_text_chat],
         ).then(
             lambda: None,
@@ -705,11 +767,21 @@ Have a conversation with an AI using your reference voice!
         # Handle text input
         text_input_chat.submit(
             process_audio_input,
-            inputs=[audio_input_chat, text_input_chat, chatbot_interface, conversation_state],
+            inputs=[
+                audio_input_chat,
+                text_input_chat,
+                chatbot_interface,
+                conversation_state,
+            ],
             outputs=[chatbot_interface, conversation_state],
         ).then(
             generate_audio_response,
-            inputs=[chatbot_interface, ref_audio_chat, ref_text_chat, remove_silence_chat],
+            inputs=[
+                chatbot_interface,
+                ref_audio_chat,
+                ref_text_chat,
+                remove_silence_chat,
+            ],
             outputs=[audio_output_chat, ref_text_chat],
         ).then(
             lambda: None,
@@ -720,11 +792,21 @@ Have a conversation with an AI using your reference voice!
         # Handle send button
         send_btn_chat.click(
             process_audio_input,
-            inputs=[audio_input_chat, text_input_chat, chatbot_interface, conversation_state],
+            inputs=[
+                audio_input_chat,
+                text_input_chat,
+                chatbot_interface,
+                conversation_state,
+            ],
             outputs=[chatbot_interface, conversation_state],
         ).then(
             generate_audio_response,
-            inputs=[chatbot_interface, ref_audio_chat, ref_text_chat, remove_silence_chat],
+            inputs=[
+                chatbot_interface,
+                ref_audio_chat,
+                ref_text_chat,
+                remove_silence_chat,
+            ],
             outputs=[audio_output_chat, ref_text_chat],
         ).then(
             lambda: None,
@@ -758,13 +840,15 @@ This is {"a local web UI for [F5 TTS](https://github.com/SWivid/F5-TTS)" if not 
 
 The checkpoints currently support English and Chinese.
 
-If you're having issues, try converting your reference audio to WAV or MP3, clipping it to 15s with  ✂  in the bottom right corner (otherwise might have non-optimal auto-trimmed result).
+If you're having issues, try converting your reference audio to WAV or MP3, clipping it to 12s with  ✂  in the bottom right corner (otherwise might have non-optimal auto-trimmed result).
 
-**NOTE: Reference text will be automatically transcribed with Whisper if not provided. For best results, keep your reference clips short (<15s). Ensure the audio is fully uploaded before generating.**
+**NOTE: Reference text will be automatically transcribed with Whisper if not provided. For best results, keep your reference clips short (<12s). Ensure the audio is fully uploaded before generating.**
 """
     )
 
-    last_used_custom = files("f5_tts").joinpath("infer/.cache/last_used_custom_model_info_v1.txt")
+    last_used_custom = files("f5_tts").joinpath(
+        "infer/.cache/last_used_custom_model_info_v1.txt"
+    )
 
     def load_last_used_custom():
         try:
@@ -780,8 +864,15 @@ If you're having issues, try converting your reference audio to WAV or MP3, clip
     def switch_tts_model(new_choice):
         global tts_model_choice
         if new_choice == "Custom":  # override in case webpage is refreshed
-            custom_ckpt_path, custom_vocab_path, custom_model_cfg = load_last_used_custom()
-            tts_model_choice = ["Custom", custom_ckpt_path, custom_vocab_path, json.loads(custom_model_cfg)]
+            custom_ckpt_path, custom_vocab_path, custom_model_cfg = (
+                load_last_used_custom()
+            )
+            tts_model_choice = [
+                "Custom",
+                custom_ckpt_path,
+                custom_vocab_path,
+                json.loads(custom_model_cfg),
+            ]
             return (
                 gr.update(visible=True, value=custom_ckpt_path),
                 gr.update(visible=True, value=custom_vocab_path),
@@ -789,22 +880,42 @@ If you're having issues, try converting your reference audio to WAV or MP3, clip
             )
         else:
             tts_model_choice = new_choice
-            return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+            return (
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False),
+            )
 
     def set_custom_model(custom_ckpt_path, custom_vocab_path, custom_model_cfg):
         global tts_model_choice
-        tts_model_choice = ["Custom", custom_ckpt_path, custom_vocab_path, json.loads(custom_model_cfg)]
+        tts_model_choice = [
+            "Custom",
+            custom_ckpt_path,
+            custom_vocab_path,
+            json.loads(custom_model_cfg),
+        ]
         with open(last_used_custom, "w", encoding="utf-8") as f:
-            f.write(custom_ckpt_path + "\n" + custom_vocab_path + "\n" + custom_model_cfg + "\n")
+            f.write(
+                custom_ckpt_path
+                + "\n"
+                + custom_vocab_path
+                + "\n"
+                + custom_model_cfg
+                + "\n"
+            )
 
     with gr.Row():
         if not USING_SPACES:
             choose_tts_model = gr.Radio(
-                choices=[DEFAULT_TTS_MODEL, "E2-TTS", "Custom"], label="Choose TTS Model", value=DEFAULT_TTS_MODEL
+                choices=[DEFAULT_TTS_MODEL, "E2-TTS", "Custom"],
+                label="Choose TTS Model",
+                value=DEFAULT_TTS_MODEL,
             )
         else:
             choose_tts_model = gr.Radio(
-                choices=[DEFAULT_TTS_MODEL, "E2-TTS"], label="Choose TTS Model", value=DEFAULT_TTS_MODEL
+                choices=[DEFAULT_TTS_MODEL, "E2-TTS"],
+                label="Choose TTS Model",
+                value=DEFAULT_TTS_MODEL,
             )
         custom_ckpt_path = gr.Dropdown(
             choices=[DEFAULT_TTS_MODEL_CFG[0]],

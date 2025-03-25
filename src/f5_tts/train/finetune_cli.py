@@ -70,11 +70,40 @@ def parse_args():
     parser.add_argument(
         "--num_warmup_updates", type=int, default=300, help="Warmup updates"
     )
+    # parser.add_argument(
+    #     "--batch_size_type",
+    #     type=str,
+    #     default="frame",
+    #     choices=["frame", "sample"],
+    #     help="Batch size type",
+    # )
+    # parser.add_argument(
+    #     "--max_samples", type=int, default=64, help="Max sequences per batch"
+    # )
+    # parser.add_argument(
+    #     "--grad_accumulation_steps",
+    #     type=int,
+    #     default=1,
+    #     help="Gradient accumulation steps",
+    # )
+    # parser.add_argument(
+    #     "--max_grad_norm",
+    #     type=float,
+    #     default=1.0,
+    #     help="Max gradient norm for clipping",
+    # )
+    # parser.add_argument(
+    #     "--epochs", type=int, default=100, help="Number of training epochs"
+    # )
+    # parser.add_argument(
+    #     "--num_warmup_updates", type=int, default=20000, help="Warmup updates"
+    # )
+
     parser.add_argument(
         "--save_per_updates",
         type=int,
-        default=10000,
-        help="Save checkpoint every X updates",
+        default=50000,
+        help="Save checkpoint every N updates",
     )
     parser.add_argument(
         "--keep_last_n_checkpoints",
@@ -85,8 +114,8 @@ def parse_args():
     parser.add_argument(
         "--last_per_updates",
         type=int,
-        default=50000,
-        help="Save last checkpoint every X updates",
+        default=5000,
+        help="Save last checkpoint every N updates",
     )
     parser.add_argument("--finetune", action="store_true", help="Use Finetune")
     parser.add_argument(
@@ -114,7 +143,7 @@ def parse_args():
         "--logger",
         type=str,
         default=None,
-        choices=["wandb", "tensorboard"],
+        choices=[None, "wandb", "tensorboard"],
         help="logger",
     )
     parser.add_argument(

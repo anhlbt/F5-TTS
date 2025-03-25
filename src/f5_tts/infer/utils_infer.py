@@ -270,7 +270,7 @@ def load_model(
     mel_spec_type=mel_spec_type,
     vocab_file="",
     ode_method=ode_method,
-    use_ema=False,  #
+    use_ema=True,  #
     device=device,
 ):
     if vocab_file == "":
@@ -349,7 +349,7 @@ def preprocess_ref_audio_text(
                     len(non_silent_wave) > 6000
                     and len(non_silent_wave + non_silent_seg) > 12000
                 ):
-                    show_info("Audio is over 15s, clipping short. (1)")
+                    show_info("Audio is over 12s, clipping short. (1)")
                     break
                 non_silent_wave += non_silent_seg
 
@@ -368,7 +368,7 @@ def preprocess_ref_audio_text(
                         len(non_silent_wave) > 6000
                         and len(non_silent_wave + non_silent_seg) > 12000
                     ):
-                        show_info("Audio is over 15s, clipping short. (2)")
+                        show_info("Audio is over 12s, clipping short. (2)")
                         break
                     non_silent_wave += non_silent_seg
 
@@ -377,7 +377,7 @@ def preprocess_ref_audio_text(
             # 3. if no proper silence found for clipping
             if len(aseg) > 12000:
                 aseg = aseg[:12000]
-                show_info("Audio is over 15s, clipping short. (3)")
+                show_info("Audio is over 12s, clipping short. (3)")
 
         aseg = remove_silence_edges(aseg) + AudioSegment.silent(duration=50)
         aseg.export(f.name, format="wav")
