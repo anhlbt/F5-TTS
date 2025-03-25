@@ -423,7 +423,7 @@ class Trainer:
 
             progress_bar = tqdm(
                 range(math.ceil(len(train_dataloader) / self.grad_accumulation_steps)),
-                desc=f"Epoch {epoch+1}/{self.epochs}",
+                desc=f"Epoch {epoch + 1}/{self.epochs}",
                 unit="update",
                 disable=not self.accelerator.is_local_main_process,
                 initial=progress_bar_initial,
@@ -533,6 +533,7 @@ class Trainer:
                             ref_audio,
                             target_sample_rate,
                         )
+                        self.model.train()
 
                 if (
                     global_update % self.last_per_updates == 0
