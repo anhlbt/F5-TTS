@@ -282,3 +282,14 @@ done
 
 
 
+
+```bash
+curl -X POST "http://0.0.0.0:8000/generate" \
+     -H "Content-Type: application/json" \
+     -d '{
+         "ref_file": "src/f5_tts/infer/examples/basic/basic_ref_en.wav",
+         "ref_text": "Some call me nature, others call me mother nature.",
+         "gen_text": "I don\u0027t really care what you call me. I\u0027ve been a silent spectator, watching species evolve, empires rise and fall. But always remember, I am mighty and enduring.",
+         "remove_silence": false
+     }'
+```

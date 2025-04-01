@@ -1,6 +1,10 @@
 version: "3.8"
 
 services:
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
   f5-tts:
     shm_size: "16gb"
     hostname: f5-tts
@@ -14,14 +18,12 @@ services:
     volumes:
       - ./:/workspace/F5-TTS/ # Mount thư mục local F5-TTS vào container
       - /media/anhlbt/SSD1/cache:/root/.cache
-      - /tmp/.X11-unix/:/tmp/.X11-unix
       - /media/anhlbt/Book/datasets/datasets_voice/VOICE_TASK/vivos_edited:/workspace/F5-TTS/data/vivos_char
       - /media/anhlbt/SSD2/viVoice:/workspace/F5-TTS/data/vivoice_char
     environment:
       - NVIDIA_VISIBLE_DEVICES=all # Cho phép sử dụng tất cả GPU NVIDIA
       - SHELL=/bin/bash # Đặt shell mặc định
       - TZ=Asia/Ho_Chi_Minh
-      - DISPLAY=${DISPLAY}
       - WORK_DIR=/workspace/F5-TTS
       - HF_HOME=/root/.cache/huggingface/hub
     deploy:
@@ -33,10 +35,146 @@ services:
               device_ids: ["0", "1"]
               capabilities: [gpu, utility, video, compute]
       # Lệnh chạy finetune_gradio.py
-    network_mode: "host"
+    # network_mode: "host"
     # command: "python src/f5_tts/train/finetune_gradio.py"
     entrypoint: ["/bin/sh", "./run_finetune_gradio.sh"]
     tty: true # Giữ container chạy tương tác
     stdin_open: true # Cho phép nhập liệu từ terminal
-    # ports:
-    #   - "7860:7860"  # Map port cho Gradio (web interface)
+    ports:
+      - "7865:7865" # Map port cho Gradio (web interface)
+
+  f5-tts_infer:
+    shm_size: "4gb"
+    hostname: f5-tts_infer
+    container_name: f5-tts_infer
+    image: f5-tts-f5-tts:latest
+    volumes:
+      - ./:/workspace/F5-TTS/ # Mount thư mục local F5-TTS vào container
+      - /media/anhlbt/SSD1/cache:/root/.cache
+      - /media/anhlbt/Book/datasets/datasets_voice/VOICE_TASK/vivos_edited:/workspace/F5-TTS/data/vivos_char
+      - /media/anhlbt/SSD2/viVoice:/workspace/F5-TTS/data/vivoice_char
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all # Cho phép sử dụng tất cả GPU NVIDIA
+      - SHELL=/bin/bash # Đặt shell mặc định
+      - TZ=Asia/Ho_Chi_Minh
+      - WORK_DIR=/workspace/F5-TTS
+      - HF_HOME=/root/.cache/huggingface/hub
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              # count: 1  # Số lượng GPU, có thể đổi thành "all" nếu cần
+              device_ids: ["1"]
+              capabilities: [gpu, utility, video, compute]
+    entrypoint: ["/bin/sh", "./run_infer.sh"]
+    tty: true # Giữ container chạy tương tác
+    stdin_open: true # Cho phép nhập liệu từ terminal
+    ports:
+      - "7866:7866" # Map port cho Gradio (web interface)
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    volumes:
+      - kafka-data:/var/lib/kafka
+    healthcheck:
+      test:
+        ["CMD", "kafka-topics.sh", "--list", "--zookeeper", "zookeeper:2181"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  api:
+    image: f5-tts-f5-tts:latest
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - ./:/workspace/F5-TTS/ # Mount thư mục local F5-TTS vào container
+    depends_on:
+      - kafka
+      - redis
+    command: uvicorn src.f5_tts.fast_api:app --host 0.0.0.0 --port 8000
+    deploy:
+      replicas: 2 # Multiple API instances
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              # count: 1  # Số lượng GPU, có thể đổi thành "all" nếu cần
+              device_ids: ["1"]
+              capabilities: [gpu, utility, video, compute]
+
+    # Note: Port mapping removed here; handled by load balancer
+    networks:
+      default:
+        aliases:
+          - api-1 # Match nginx.conf
+          - api-2 # Match nginx.conf
+
+  worker:
+    image: f5-tts-f5-tts:latest
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    environment:
+      - SHELL=/bin/bash # Đặt shell mặc định
+      - TZ=Asia/Ho_Chi_Minh
+      - HF_HOME=/root/.cache/huggingface/hub
+      - KAFKA_BROKER=kafka:9092
+    depends_on:
+      - kafka
+    command: python -m src.f5_tts.worker
+    deploy:
+      replicas: 3 # Multiple workers
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              # count: 1  # Số lượng GPU, có thể đổi thành "all" nếu cần
+              device_ids: ["1"]
+              capabilities: [gpu, utility, video, compute]
+    volumes:
+      - ./:/workspace/F5-TTS/ # Mount thư mục local F5-TTS vào container
+      - /media/anhlbt/SSD1/cache:/root/.cache
+
+  nginx:
+    image: nginx:latest
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8000:8000" # Expose only this port externally
+    depends_on:
+      - api
+
+networks:
+  default:
+    driver: bridge
+volumes:
+  cache:
+  zookeeper-data:
+  kafka-data:

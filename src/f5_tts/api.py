@@ -21,11 +21,12 @@ from f5_tts.model.utils import seed_everything
 
 
 class F5TTS:
+
     def __init__(
         self,
-        model="F5TTS_v1_Base",
-        ckpt_file="",
-        vocab_file="",
+        model="F5TTS_Base",  # "F5TTS_v1_Base",
+        ckpt_file="/workspace/F5-TTS/ckpts/vivoice/model_last.pt",
+        vocab_file="/workspace/F5-TTS/ckpts/vivoice/vocab.txt",
         ode_method="euler",
         use_ema=True,
         vocoder_local_path=None,

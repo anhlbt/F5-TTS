@@ -23,6 +23,10 @@ WORKDIR /workspace
 #     && pip install -e . --no-cache-dir
 COPY . ./F5-TTS/
 RUN  cd F5-TTS && pip install -e . --no-cache-dir
+
+RUN cd F5-TTS && pip install --no-cache-dir -r requirements.txt
+
+RUN mkdir -p /workspace/F5-TTS/outputs
 ENV SHELL=/bin/bash
-RUN pip install tensorboard cached_path
+# RUN pip install tensorboard cached_path
 WORKDIR /workspace/F5-TTS

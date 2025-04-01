@@ -31,16 +31,16 @@ dependencies = [
     "safetensors",
     "soundfile",
     "tomli",
-    "torch>=2.0.0",
-    "torchaudio>=2.0.0",
     "torchdiffeq",
     "tqdm>=4.65.0",
     "transformers",
     "transformers_stream_generator",
     "vocos",
-    "wandb",
+    "wandb>=0.17.0",
     "x_transformers>=1.31.14",
 ]
+
+
 
 [project.optional-dependencies]
 eval = [
