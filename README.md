@@ -293,3 +293,10 @@ curl -X POST "http://0.0.0.0:8000/generate" \
          "remove_silence": false
      }'
 ```
+
+
+### Random Seed
+3510892055103586970
+
+8184481127414169600
+2203761066509910022

@@ -4,11 +4,13 @@ import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
+
 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"  # for MPS device compatibility
 sys.path.append(
     f"{os.path.dirname(os.path.abspath(__file__))}/../../third_party/BigVGAN/"
 )
-
+sys.path.append(f"{os.path.dirname(os.path.abspath(__file__))}/../../third_party")
+from vinorm import TTSnorm
 import hashlib
 import re
 import tempfile
@@ -23,10 +25,11 @@ import numpy as np
 import torch
 import torchaudio
 import tqdm
-from huggingface_hub import snapshot_download, hf_hub_download
+from huggingface_hub import hf_hub_download
 from pydub import AudioSegment, silence
 from transformers import pipeline
 from vocos import Vocos
+import re
 
 from f5_tts.model import CFM
 from f5_tts.model.utils import (
@@ -66,10 +69,54 @@ fix_duration = None
 # -----------------------------------------
 
 
+def post_process(text):
+    replacements = {" . ": ". ", " .. ": ". ", " , ": ", ", " ! ": "! ", " ? ": "? "}
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    # Thay thế một hoặc nhiều khoảng trắng bằng một khoảng trắng
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
 # chunk text into smaller pieces
 
 
-def chunk_text(text, max_chars=135):
+def chunk_text(text, max_chars=150):
+    # Define length limit
+    threshold = int(max_chars * 0.8)  # 80% của max_chars
+    punctuation_marks = "。？！，、；：”’》」』）】…—"
+    english_punctuation = ".?!,:;)}…"
+    final_punctuation = ".?"  # Chỉ dùng các dấu này để cắt khi vượt ngưỡng 80%
+    # Results list
+    result = []
+    # Starting location
+    pos = 0
+    # Iterate through each character in the text
+    text = text.strip()
+    text_length = len(text)
+    for i, char in enumerate(text):
+        if char in punctuation_marks or char in english_punctuation:
+            if char == "." and i < text_length - 1 and re.match(r"\d", text[i + 1]):
+                continue
+
+            current_length = i - pos
+            # Nếu chưa đạt threshold, cắt bình thường với mọi dấu câu
+            if current_length > max_chars:
+                result.append(text[pos : i + 1].strip())
+                pos = i + 1
+            # Nếu đã đạt hoặc vượt threshold, chỉ cắt khi gặp ".?"
+            elif current_length >= threshold and char in final_punctuation:
+                result.append(text[pos : i + 1].strip())
+                pos = i + 1
+            # Nếu chưa đạt threshold, tiếp tục bỏ qua (không cắt)
+    # Xử lý phần text còn lại
+    if pos < len(text):
+        result.append(text[pos:].strip())
+
+    return result
+
+
+def chunk_text_v1(text, max_chars=115):
     """
     Splits the input text into chunks, each with a maximum number of characters.
 
@@ -153,13 +200,14 @@ def load_vocoder(
                 "You need to follow the README to init submodule and change the BigVGAN source code."
             )
         if is_local:
-            """download from https://huggingface.co/nvidia/bigvgan_v2_24khz_100band_256x/tree/main"""
+            # download generator from https://huggingface.co/nvidia/bigvgan_v2_24khz_100band_256x/tree/main
             vocoder = bigvgan.BigVGAN.from_pretrained(local_path, use_cuda_kernel=False)
         else:
-            local_path = snapshot_download(
-                repo_id="nvidia/bigvgan_v2_24khz_100band_256x", cache_dir=hf_cache_dir
+            vocoder = bigvgan.BigVGAN.from_pretrained(
+                "nvidia/bigvgan_v2_24khz_100band_256x",
+                use_cuda_kernel=False,
+                cache_dir=hf_cache_dir,
             )
-            vocoder = bigvgan.BigVGAN.from_pretrained(local_path, use_cuda_kernel=False)
 
         vocoder.remove_weight_norm()
         vocoder = vocoder.eval().to(device)
@@ -437,12 +485,17 @@ def infer_process(
 ):
     # Split the input text into batches
     audio, sr = torchaudio.load(ref_audio)
+    ref_text = post_process(TTSnorm(ref_text, rule=False))
+    print("norm ref_text: ", ref_text)
+    gen_text = post_process(TTSnorm(gen_text, rule=False))
+    print("norm gen_text: ", gen_text)
     max_chars = int(
         len(ref_text.encode("utf-8"))
         / (audio.shape[-1] / sr)
         * (22 - audio.shape[-1] / sr)
     )
-    gen_text_batches = chunk_text(gen_text, max_chars=max_chars)
+    print("max_chars: ", max_chars)
+    gen_text_batches = chunk_text(gen_text, max_chars=130)
     for i, gen_text in enumerate(gen_text_batches):
         print(f"gen_text {i}", gen_text)
     print("\n")

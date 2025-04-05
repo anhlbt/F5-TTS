@@ -51,7 +51,7 @@ class Trainer:
         mel_spec_type: str = "vocos",  # "vocos" | "bigvgan"
         is_local_vocoder: bool = False,  # use local path vocoder
         local_vocoder_path: str = "",  # local vocoder path
-        cfg_dict: dict = dict(),  # training config
+        model_cfg_dict: dict = dict(),  # training config
     ):
         ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
 
@@ -79,8 +79,8 @@ class Trainer:
             else:
                 init_kwargs = {"wandb": {"resume": "allow", "name": wandb_run_name}}
 
-            if not cfg_dict:
-                cfg_dict = {
+            if not model_cfg_dict:
+                model_cfg_dict = {
                     "epochs": epochs,
                     "learning_rate": learning_rate,
                     "num_warmup_updates": num_warmup_updates,
@@ -91,11 +91,11 @@ class Trainer:
                     "max_grad_norm": max_grad_norm,
                     "noise_scheduler": noise_scheduler,
                 }
-            cfg_dict["gpus"] = self.accelerator.num_processes
+            model_cfg_dict["gpus"] = self.accelerator.num_processes
             self.accelerator.init_trackers(
                 project_name=wandb_project,
                 init_kwargs=init_kwargs,
-                config=cfg_dict,
+                config=model_cfg_dict,
             )
 
         elif self.logger == "tensorboard":
@@ -486,6 +486,12 @@ class Trainer:
                         )
 
                 if (
+                    global_update % self.last_per_updates == 0
+                    and self.accelerator.sync_gradients
+                ):
+                    self.save_checkpoint(global_update, last=True)
+
+                if (
                     global_update % self.save_per_updates == 0
                     and self.accelerator.sync_gradients
                 ):
@@ -534,12 +540,6 @@ class Trainer:
                             target_sample_rate,
                         )
                         self.model.train()
-
-                if (
-                    global_update % self.last_per_updates == 0
-                    and self.accelerator.sync_gradients
-                ):
-                    self.save_checkpoint(global_update, last=True)
 
         self.save_checkpoint(global_update, last=True)
 

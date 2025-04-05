@@ -53,6 +53,7 @@ services:
       - /media/anhlbt/SSD1/cache:/root/.cache
       - /media/anhlbt/Book/datasets/datasets_voice/VOICE_TASK/vivos_edited:/workspace/F5-TTS/data/vivos_char
       - /media/anhlbt/SSD2/viVoice:/workspace/F5-TTS/data/vivoice_char
+      - /media/anhlbt/SSD2/workspace/VOICE_TASK/F5-TTS/ckpts:/workspace/F5-TTS/ckpts
     environment:
       - NVIDIA_VISIBLE_DEVICES=all # Cho phép sử dụng tất cả GPU NVIDIA
       - SHELL=/bin/bash # Đặt shell mặc định
@@ -72,6 +73,7 @@ services:
     stdin_open: true # Cho phép nhập liệu từ terminal
     ports:
       - "7866:7866" # Map port cho Gradio (web interface)
+      - "7867:7867" # api
 
   zookeeper:
     image: confluentinc/cp-zookeeper:latest

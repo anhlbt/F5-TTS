@@ -1,6 +1,7 @@
 # ruff: noqa: E402
 # Above allows ruff to ignore E402: module level import not at top of file
 
+import gc
 import json
 import re
 import tempfile
@@ -11,6 +12,7 @@ import click
 import gradio as gr
 import numpy as np
 import soundfile as sf
+import torch
 import torchaudio
 from cached_path import cached_path
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -41,7 +43,7 @@ from f5_tts.infer.utils_infer import (
 )
 
 
-DEFAULT_TTS_MODEL = "Custom"  # "F5-TTS_v1"
+DEFAULT_TTS_MODEL = "F5-TTS_v1"  # "Custom"  #
 tts_model_choice = DEFAULT_TTS_MODEL
 
 # DEFAULT_TTS_MODEL_CFG = [
@@ -596,39 +598,56 @@ Have a conversation with an AI using your reference voice!
 """
     )
 
-    if not USING_SPACES:
-        load_chat_model_btn = gr.Button("Load Chat Model", variant="primary")
+    chat_model_name_list = [
+        "Qwen/Qwen2.5-3B-Instruct",
+        "microsoft/Phi-4-mini-instruct",
+    ]
 
-        chat_interface_container = gr.Column(visible=False)
+    @gpu_decorator
+    def load_chat_model(chat_model_name):
+        show_info = gr.Info
+        global chat_model_state, chat_tokenizer_state
+        if chat_model_state is not None:
+            chat_model_state = None
+            chat_tokenizer_state = None
+            gc.collect()
+            torch.cuda.empty_cache()
 
-        @gpu_decorator
-        def load_chat_model():
-            global chat_model_state, chat_tokenizer_state
-            if chat_model_state is None:
-                show_info = gr.Info
-                show_info("Loading chat model...")
-                model_name = "Qwen/Qwen2.5-3B-Instruct"
-                chat_model_state = AutoModelForCausalLM.from_pretrained(
-                    model_name, torch_dtype="auto", device_map="auto"
-                )
-                chat_tokenizer_state = AutoTokenizer.from_pretrained(model_name)
-                show_info("Chat model loaded.")
-
-            return gr.update(visible=False), gr.update(visible=True)
-
-        load_chat_model_btn.click(
-            load_chat_model, outputs=[load_chat_model_btn, chat_interface_container]
+        show_info(f"Loading chat model: {chat_model_name}")
+        chat_model_state = AutoModelForCausalLM.from_pretrained(
+            chat_model_name, torch_dtype="auto", device_map="auto"
         )
+        chat_tokenizer_state = AutoTokenizer.from_pretrained(chat_model_name)
+        show_info(f"Chat model {chat_model_name} loaded successfully!")
 
-    else:
-        chat_interface_container = gr.Column()
+        return gr.update(visible=False), gr.update(visible=True)
 
-        if chat_model_state is None:
-            model_name = "Qwen/Qwen2.5-3B-Instruct"
-            chat_model_state = AutoModelForCausalLM.from_pretrained(
-                model_name, torch_dtype="auto", device_map="auto"
-            )
-            chat_tokenizer_state = AutoTokenizer.from_pretrained(model_name)
+    if USING_SPACES:
+        load_chat_model(chat_model_name_list[0])
+
+    chat_model_name_input = gr.Dropdown(
+        choices=chat_model_name_list,
+        value=chat_model_name_list[0],
+        label="Chat Model Name",
+        info="Enter the name of a HuggingFace chat model",
+        allow_custom_value=not USING_SPACES,
+    )
+    load_chat_model_btn = gr.Button(
+        "Load Chat Model", variant="primary", visible=not USING_SPACES
+    )
+    chat_interface_container = gr.Column(visible=USING_SPACES)
+
+    chat_model_name_input.change(
+        lambda: gr.update(visible=True),
+        None,
+        load_chat_model_btn,
+        show_progress="hidden",
+    )
+    load_chat_model_btn.click(
+        load_chat_model,
+        inputs=[chat_model_name_input],
+        outputs=[load_chat_model_btn, chat_interface_container],
+    )
 
     with chat_interface_container:
         with gr.Row():
@@ -918,7 +937,10 @@ If you're having issues, try converting your reference audio to WAV or MP3, clip
                 value=DEFAULT_TTS_MODEL,
             )
         custom_ckpt_path = gr.Dropdown(
-            choices=[DEFAULT_TTS_MODEL_CFG[0]],
+            choices=[
+                "/workspace/F5-TTS/ckpts/vivoice/model_2760000.pt",
+                "/workspace/F5-TTS/ckpts/vivoice/model_last.pt",
+            ],  # [DEFAULT_TTS_MODEL_CFG[0]],
             value=load_last_used_custom()[0],
             allow_custom_value=True,
             label="Model: local_path | hf://user_id/repo_id/model_ckpt",
@@ -993,41 +1015,16 @@ If you're having issues, try converting your reference audio to WAV or MP3, clip
     )
 
 
-@click.command()
-@click.option("--port", "-p", default=None, type=int, help="Port to run the app on")
-@click.option("--host", "-H", default=None, help="Host to run the app on")
-@click.option(
-    "--share",
-    "-s",
-    default=False,
-    is_flag=True,
-    help="Share the app via Gradio share link",
-)
-@click.option("--api", "-a", default=True, is_flag=True, help="Allow API access")
-@click.option(
-    "--root_path",
-    "-r",
-    default=None,
-    type=str,
-    help='The root path (or "mount point") of the application, if it\'s not served from the root ("/") of the domain. Often used when the application is behind a reverse proxy that forwards requests to the application, e.g. set "/myapp" or full URL for application served at "https://example.com/myapp".',
-)
-@click.option(
-    "--inbrowser",
-    "-i",
-    is_flag=True,
-    default=False,
-    help="Automatically launch the interface in the default web browser",
-)
-def main(port, host, share, api, root_path, inbrowser):
+def main():
     global app
     print("Starting app...")
-    app.queue(api_open=api).launch(
-        server_name=host,
-        server_port=port,
-        share=share,
-        show_api=api,
-        root_path=root_path,
-        inbrowser=inbrowser,
+    app.queue(api_open=False).launch(
+        server_name="0.0.0.0",
+        server_port=7866,
+        share=True,
+        show_api=False,
+        root_path=None,
+        inbrowser=True,
     )
 
 

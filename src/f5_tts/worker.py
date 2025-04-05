@@ -4,6 +4,7 @@ import json
 import os
 from .api import F5TTS
 
+
 KAFKA_BROKER = os.getenv("KAFKA_BROKER", "localhost:9092")
 KAFKA_REQUEST_TOPIC = "tts_requests"
 KAFKA_RESULT_TOPIC = "tts_results"

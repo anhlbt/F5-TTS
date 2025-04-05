@@ -27,6 +27,9 @@ from cached_path import cached_path
 from datasets import Dataset as Dataset_
 from datasets.arrow_writer import ArrowWriter
 from safetensors.torch import load_file, save_file
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from f5_tts.api import F5TTS
 from f5_tts.model.utils import convert_char_to_pinyin
@@ -862,7 +865,7 @@ def get_correct_audio_path(
     return file_audio
 
 
-def create_metadata(name_project, ch_tokenizer, progress=gr.Progress()):
+def create_metadata_v1(name_project, ch_tokenizer, progress=gr.Progress()):
     path_project = os.path.join(path_data, name_project)
     path_project_wavs = os.path.join(path_project, "wavs")
     file_metadata = os.path.join(path_project, "metadata.csv")
@@ -979,6 +982,141 @@ def create_metadata(name_project, ch_tokenizer, progress=gr.Progress()):
 
     return (
         f"prepare complete \nsamples : {len(text_list)}\ntime data : {format_seconds_to_hms(lenght)}\nmin sec : {min_second}\nmax sec : {max_second}\nfile_arrow : {file_raw}\nvocab : {vocab_size}\n{error_text}",
+        new_vocal,
+    )
+
+
+def process_audio_line(args):
+    """Xử lý từng dòng dữ liệu trong process riêng"""
+    line, path_project_wavs = args
+    try:
+        sp_line = line.split("|")
+        if len(sp_line) != 3:
+            return None, ["metadata format error", sp_line]
+
+        name_audio, text = sp_line[:2]
+        file_audio = get_correct_audio_path(name_audio, path_project_wavs)
+
+        if not os.path.isfile(file_audio):
+            return None, [file_audio, "error path"]
+
+        duration = get_audio_duration(file_audio)
+
+        if duration < 1 or duration > 30:
+            error_msg = "duration > 30 sec" if duration > 30 else "duration < 1 sec"
+            return None, [file_audio, error_msg]
+
+        if len(text) < 3:
+            return None, [file_audio, "very short text length 3"]
+
+        text = clear_text(text)
+        text = convert_char_to_pinyin([text], polyphone=True)[0]
+
+        return {"audio_path": file_audio, "text": text, "duration": duration}, None
+
+    except Exception as e:
+        print(e)
+        return None, [
+            file_audio if "file_audio" in locals() else "unknown",
+            f"error: {str(e)}",
+        ]
+
+
+def create_metadata(name_project, ch_tokenizer, progress=gr.Progress()):
+    path_project = os.path.join(path_data, name_project)
+    path_project_wavs = os.path.join(path_project, "wavs")
+    file_metadata = os.path.join(path_project, "metadata.csv")
+    file_raw = os.path.join(path_project, "raw.arrow")
+    file_duration = os.path.join(path_project, "duration.json")
+    file_vocab = os.path.join(path_project, "vocab.txt")
+
+    if not os.path.isfile(file_metadata):
+        return "The file was not found in " + file_metadata, ""
+
+    with open(file_metadata, "r", encoding="utf-8-sig") as f:
+        data = f.read()
+
+    lines = [line for line in data.split("\n") if line.strip()]
+    if not lines:
+        return "Error: Empty metadata file", ""
+
+    audio_path_list = []
+    text_list = []
+    duration_list = []
+    result = []
+    error_files = []
+    text_vocab_set = set()
+
+    # Sử dụng ProcessPoolExecutor để xử lý song song
+    with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
+        # Chuẩn bị dữ liệu đầu vào cho các process
+        tasks = [(line, path_project_wavs) for line in lines]
+        future_to_line = {
+            executor.submit(process_audio_line, task): task[0] for task in tasks
+        }
+
+        for future in progress.tqdm(
+            as_completed(future_to_line),
+            total=len(lines),
+            desc="Processing audio files",
+        ):
+            processed_data, error = future.result()
+            if processed_data:
+                result.append(processed_data)
+                audio_path_list.append(processed_data["audio_path"])
+                duration_list.append(processed_data["duration"])
+                text_list.append(processed_data["text"])
+                if ch_tokenizer:
+                    text_vocab_set.update(list(processed_data["text"]))
+            elif error:
+                error_files.append(error)
+
+    if not duration_list:
+        return f"Error: No valid audio files found in {path_project_wavs}", ""
+
+    # Ghi dữ liệu arrow
+    with ArrowWriter(path=file_raw, writer_batch_size=1) as writer:
+        for line in progress.tqdm(result, total=len(result), desc="Writing arrow data"):
+            writer.write(line)
+
+    # Ghi duration
+    with open(file_duration, "w") as f:
+        json.dump({"duration": duration_list}, f, ensure_ascii=False)
+
+    # Xử lý vocabulary
+    new_vocal = ""
+    if not ch_tokenizer:
+        if not os.path.isfile(file_vocab):
+            file_vocab_finetune = os.path.join(
+                path_data, "Emilia_ZH_EN_pinyin/vocab.txt"
+            )
+            if not os.path.isfile(file_vocab_finetune):
+                return "Error: Vocabulary file 'Emilia_ZH_EN_pinyin' not found!", ""
+            shutil.copy2(file_vocab_finetune, file_vocab)
+
+        with open(file_vocab, "r", encoding="utf-8-sig") as f:
+            vocab_char_map = {char.strip(): i for i, char in enumerate(f)}
+        vocab_size = len(vocab_char_map)
+    else:
+        with open(file_vocab, "w", encoding="utf-8-sig") as f:
+            sorted_vocab = sorted(text_vocab_set)
+            new_vocal = "\n".join(sorted_vocab)
+            f.write(new_vocal + "\n")
+        vocab_size = len(text_vocab_set)
+
+    # Chuẩn bị kết quả
+    total_duration = sum(duration_list)
+    min_second = round(min(duration_list), 2)
+    max_second = round(max(duration_list), 2)
+    error_text = (
+        "\n".join([" = ".join(map(str, item)) for item in error_files])
+        if error_files
+        else ""
+    )
+
+    return (
+        f"prepare complete \nsamples: {len(text_list)}\ntime data: {format_seconds_to_hms(total_duration)}\n"
+        f"min sec: {min_second}\nmax sec: {max_second}\nfile_arrow: {file_raw}\nvocab: {vocab_size}\n{error_text}",
         new_vocal,
     )
 
@@ -1245,7 +1383,7 @@ def vocab_check(project_name):
     miss_symbols_keep = {}
     for item in data.split("\n"):
         sp = item.split("|")
-        if len(sp) != 2:
+        if len(sp) != 3:
             continue
 
         text = sp[1].lower().strip()
@@ -1281,8 +1419,10 @@ def get_random_sample_prepare(project_name):
 def get_random_sample_transcribe(project_name):
     name_project = project_name
     path_project = os.path.join(path_data, name_project)
+    print("path_project", path_project)
     file_metadata = os.path.join(path_project, "metadata.csv")
     if not os.path.isfile(file_metadata):
+        print("not find metadata.csv")
         return "", None
 
     data = ""
@@ -1292,7 +1432,7 @@ def get_random_sample_transcribe(project_name):
     list_data = []
     for item in data.split("\n"):
         sp = item.split("|")
-        if len(sp) != 2:
+        if len(sp) != 3:
             continue
 
         # fixed audio when it is absolute
@@ -2021,7 +2161,9 @@ Check the use_ema setting (True or False) for your model to see what works best 
 ```"""
             )
             exp_name = gr.Radio(
-                label="Model", choices=["F5TTS_Base", "E2-TTS"], value="F5TTS_Base"
+                label="Model",
+                choices=["F5TTS_v1_Base", "F5TTS_Base", "E2-TTS"],
+                value="F5TTS_Base",
             )
             list_checkpoints, checkpoint_select = get_checkpoints_project(
                 projects_selelect, False
