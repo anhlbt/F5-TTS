@@ -137,7 +137,7 @@ def post_process(text):
 
 
 # chunk text into smaller pieces
-def chunk_text(text, max_chars=200):
+def chunk_text(text, max_chars=400):
     print("max_chars: ", max_chars)
     # Define length limits
     threshold_2 = int(max_chars * 1.2)  # 120% của max_chars - độ dài tối đa cho chunk
