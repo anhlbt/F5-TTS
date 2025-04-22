@@ -1,3 +1,11 @@
 [submodule "src/third_party/BigVGAN"]
 	path = src/third_party/BigVGAN
 	url = https://github.com/NVIDIA/BigVGAN.git
+
+# [submodule "tools/F5-TTS-ONNX"]
+# 	path = tools/F5-TTS-ONNX
+# 	url = https://github.com/DakeQQ/F5-TTS-ONNX.git
+
+
+
+

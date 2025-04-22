@@ -1,0 +1,5 @@
+onnxruntime-tools==1.7.0
+onnxslim
+onnxconverter_common
+numba
+# onnxruntime-gpu
