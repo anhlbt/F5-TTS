@@ -172,4 +172,5 @@ cython_debug/
 
 
 .github/
-src/third_party/vinorm
+# src/third_party/vinorm
+*.csv
