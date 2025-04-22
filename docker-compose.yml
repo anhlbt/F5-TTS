@@ -52,7 +52,7 @@ services:
     shm_size: "4gb"
     hostname: f5-tts_infer
     container_name: f5-tts_infer
-    image: f5-tts-f5-tts:latest
+    image: anhlbt/f5-tts-f5-tts:latest
     volumes:
       - ./:/workspace/F5-TTS/ # Mount thư mục local F5-TTS vào container
       - /media/anhlbt/SSD1/cache:/root/.cache
