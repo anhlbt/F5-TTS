@@ -22,11 +22,16 @@ WORKDIR /workspace
 #     && git submodule update --init --recursive \
 #     && pip install -e . --no-cache-dir
 COPY . ./F5-TTS/
+#--no-cache-dir
 RUN  cd F5-TTS && pip install -e . --no-cache-dir
-
-RUN cd F5-TTS && pip install --no-cache-dir -r requirements.txt
-
+#--no-cache-dir
+RUN cd F5-TTS && pip install -r requirements.txt --no-cache-dir 
+RUN pip install underthesea
 RUN mkdir -p /workspace/F5-TTS/outputs
 ENV SHELL=/bin/bash
 # RUN pip install tensorboard cached_path
 WORKDIR /workspace/F5-TTS
+
+
+# Set up your entrypoint and expose necessary ports
+EXPOSE 80

@@ -16,6 +16,7 @@ import torch
 import torchaudio
 from cached_path import cached_path
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import os
 
 try:
     import spaces
@@ -65,6 +66,20 @@ DEFAULT_TTS_MODEL_CFG = [
 # load models
 
 vocoder = load_vocoder()
+
+
+def get_ckpt_choices(folder_path):
+    # Lấy danh sách file kết thúc bằng .pt trong thư mục chỉ định
+    choices = [
+        os.path.join(folder_path, f)
+        for f in os.listdir(folder_path)
+        if f.endswith(".pt")
+    ]
+    return sorted(choices)  # Tuỳ chọn: sắp xếp theo tên file
+
+
+ckpt_folder = "/workspace/F5-TTS/ckpts/vivoice"
+ckpt_choices = get_ckpt_choices(ckpt_folder)
 
 
 def load_f5tts():
@@ -246,7 +261,7 @@ with gr.Blocks() as app_tts:
             label="Cross-Fade Duration (s)",
             minimum=0.0,
             maximum=1.0,
-            value=0.15,
+            value=0.0,
             step=0.01,
             info="Set the duration of the cross-fade between audio clips.",
         )
@@ -937,10 +952,7 @@ If you're having issues, try converting your reference audio to WAV or MP3, clip
                 value=DEFAULT_TTS_MODEL,
             )
         custom_ckpt_path = gr.Dropdown(
-            choices=[
-                "/workspace/F5-TTS/ckpts/vivoice/model_2760000.pt",
-                "/workspace/F5-TTS/ckpts/vivoice/model_last.pt",
-            ],  # [DEFAULT_TTS_MODEL_CFG[0]],
+            choices=ckpt_choices,  # [DEFAULT_TTS_MODEL_CFG[0]],
             value=load_last_used_custom()[0],
             allow_custom_value=True,
             label="Model: local_path | hf://user_id/repo_id/model_ckpt",

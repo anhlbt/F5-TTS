@@ -36,6 +36,9 @@ from f5_tts.model.utils import convert_char_to_pinyin
 from f5_tts.infer.utils_infer import transcribe
 
 
+from os.path import dirname, realpath, join
+
+
 training_process = None
 system = platform.system()
 python_executable = sys.executable or "python"
@@ -58,6 +61,8 @@ device = (
         else "mps" if torch.backends.mps.is_available() else "cpu"
     )
 )
+
+###################
 
 
 # Save settings from a JSON file
@@ -1422,7 +1427,7 @@ def get_random_sample_transcribe(project_name):
     name_project = project_name
     path_project = os.path.join(path_data, name_project)
     print("path_project", path_project)
-    file_metadata = os.path.join(path_project, "metadata.csv")
+    file_metadata = os.path.join(path_project, "metadata_sample.csv")
     if not os.path.isfile(file_metadata):
         print("not find metadata.csv")
         return "", None

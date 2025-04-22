@@ -3,7 +3,7 @@ hydra:
     dir: ckpts/${model.name}_${model.mel_spec.mel_spec_type}_${model.tokenizer}_${datasets.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 datasets:
-  name: Emilia_ZH_EN  # dataset name
+  name: ljspeech_dataset  # dataset name
   batch_size_per_gpu: 38400  # 8 GPUs, 8 * 38400 = 307200
   batch_size_type: frame  # frame | sample
   max_samples: 64  # max sequences per batch if use frame-wise batch_size. we set 32 for small models, 64 for base models
@@ -44,7 +44,7 @@ model:
     local_path: null  # local vocoder path
 
 ckpts:
-  logger: wandb  # wandb | tensorboard | null
+  logger: tensorboard  # wandb | tensorboard | null
   log_samples: True  # infer random sample per save checkpoint. wip, normal to fail with extra long samples
   save_per_updates: 50000  # save checkpoint per updates
   keep_last_n_checkpoints: -1  # -1 to keep all, 0 to not save intermediate, > 0 to keep last N checkpoints

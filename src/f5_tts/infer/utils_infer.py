@@ -3,7 +3,7 @@
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
-
+from underthesea import word_tokenize
 
 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"  # for MPS device compatibility
 sys.path.append(
@@ -30,6 +30,9 @@ from pydub import AudioSegment, silence
 from transformers import pipeline
 from vocos import Vocos
 import re
+
+# from vfastpunct import VFastPunct
+
 
 from f5_tts.model import CFM
 from f5_tts.model.utils import (
@@ -67,6 +70,61 @@ speed = 1.0
 fix_duration = None
 
 # -----------------------------------------
+break_words = [
+    "không chỉ thế mà còn",
+    "không chỉ vậy mà còn",
+    "trong khi đó",
+    "chẳng hạn như",
+    "ví dụ như",
+    "nói cách khác",
+    "cụ thể là",
+    "không chỉ",
+    "không những",
+    "mà còn",
+    "mặt khác",
+    "ngoài ra",
+    "hơn nữa",
+    "trái lại",
+    "ngược lại",
+    "trong khi",
+    "dẫu cho",
+    "dù cho",
+    "mặc cho",
+    "mặc kệ",
+    "miễn là",
+    "miễn sao",
+    "chỉ cần",
+    "đối với",
+    "như thể",
+    "theo đó",
+    "theo như",
+    "cùng lúc đó",
+    "cùng lúc",
+    "thậm chí",
+    "để cho",
+    "để",
+    "vì vậy",
+    "bởi vì",
+    "vì thế",
+    "do đó",
+    "do vậy",
+    "nếu như",
+    "hay",
+    "vì",
+    "nên",
+    "và",
+    "nhưng",
+    "rồi",
+    "lại",
+    "cũng",
+    "vẫn",
+    "như",
+    "nếu",
+    "khi",
+    "lúc",
+    "bởi",
+    "do",
+]
 
 
 def post_process(text):
@@ -79,11 +137,105 @@ def post_process(text):
 
 
 # chunk text into smaller pieces
+def chunk_text(text, max_chars=200):
+    print("max_chars: ", max_chars)
+    # Define length limits
+    threshold_2 = int(max_chars * 1.2)  # 120% của max_chars - độ dài tối đa cho chunk
+    min_chunk_length = int(max_chars * 0.3)  # Ngưỡng tối thiểu để xem xét chunk
+    final_punctuation = ".?!"  # Dấu câu ưu tiên để kết thúc chunk
+    english_punctuation = ".?!,:;)}…"  # Dấu câu tiếng Anh để kiểm tra chunk tạm
+    punctuation_marks = (
+        "。？！，、；：”’》」』）】…—"  # Dấu câu khác để kiểm tra chunk tạm
+    )
+
+    # Results list
+    result = []
+    # Starting position
+    pos = 0
+    text = text.strip()
+    text_length = len(text)
+    if text_length < max_chars:
+        return [text]
+
+    while pos < text_length:
+        # Nếu đây là đoạn cuối cùng (phần còn lại nhỏ hơn hoặc bằng threshold_2), append luôn
+        if pos + max_chars >= text_length:
+            new_chunk = text[pos:].strip()
+            if new_chunk:  # Chỉ append nếu chunk không rỗng
+                result.append(new_chunk)
+            break
+
+        chunk_temp = None
+        last_valid_end = None
+
+        # Duyệt từ vị trí hiện tại để tìm điểm cắt tối ưu
+        for i in range(pos, min(pos + threshold_2, text_length)):
+            current_length = i - pos + 1
+            char = text[i]
+
+            # Ưu tiên 1: Kết thúc bằng final_punctuation, dài nhất có thể (tối đa threshold_2)
+            if (
+                char in final_punctuation
+                and current_length <= threshold_2
+                and current_length > min_chunk_length
+            ):
+                last_valid_end = i
+                if (
+                    i == text_length - 1 or text[i + 1].isspace()
+                ):  # Đảm bảo không cắt giữa từ
+                    chunk_temp = text[pos : i + 1].strip()
+                    break
+
+            # Ưu tiên 2: Lưu chunk tạm nếu thoả min_chunk_length < length < max_chars
+            # và kết thúc bằng dấu trong english_punctuation hoặc punctuation_marks
+            elif (
+                min_chunk_length < current_length <= max_chars
+                and char in (english_punctuation + punctuation_marks)
+                and (i == text_length - 1 or text[i + 1].isspace())
+            ):
+                if not chunk_temp:  # Chỉ lưu chunk_temp đầu tiên thoả mãn
+                    chunk_temp = text[pos : i + 1].strip()
+
+        # Xử lý chunk đã tìm được
+        if last_valid_end is not None:  # Ưu tiên 1: Có final_punctuation
+            new_chunk = text[pos : last_valid_end + 1].strip()
+            result.append(new_chunk)
+            pos = last_valid_end + 1
+        elif chunk_temp:  # Ưu tiên 2: Có chunk tạm thoả mãn
+            result.append(chunk_temp)
+            pos += len(chunk_temp)
+        else:  # Ưu tiên 3: Không có dấu, cắt dựa trên penultimate word
+            chunk = text[pos : pos + max_chars]
+            last_space = chunk.rfind(" ")
+            if last_space != -1:
+                sub_chunk = text[pos : pos + last_space]
+                tokenized_words = word_tokenize(sub_chunk)
+                if len(tokenized_words) >= 2:
+                    penultimate_word = tokenized_words[-2]
+                    cut_pos = sub_chunk.rfind(penultimate_word) + len(penultimate_word)
+                    new_chunk = text[pos : pos + cut_pos].strip()
+                    result.append(new_chunk)
+                    pos = pos + cut_pos
+                else:
+                    new_chunk = sub_chunk.strip()
+                    result.append(new_chunk)
+                    pos = pos + last_space
+            else:  # Nếu không có khoảng trắng, cắt cứng ở max_chars
+                new_chunk = chunk.strip()
+                result.append(new_chunk)
+                pos += max_chars
+
+        # Bỏ qua khoảng trắng sau chunk
+        while pos < text_length and text[pos].isspace():
+            pos += 1
+
+    return result
 
 
-def chunk_text(text, max_chars=150):
-    # Define length limit
+def chunk_text_with_break_words(text, max_chars=115):
+    # Define length limits
     threshold = int(max_chars * 0.8)  # 80% của max_chars
+    threshold_2 = int(max_chars * 1.2)  # 120% của max_chars
     punctuation_marks = "。？！，、；：”’》」』）】…—"
     english_punctuation = ".?!,:;)}…"
     final_punctuation = ".?"  # Chỉ dùng các dấu này để cắt khi vượt ngưỡng 80%
@@ -91,27 +243,141 @@ def chunk_text(text, max_chars=150):
     result = []
     # Starting location
     pos = 0
-    # Iterate through each character in the text
     text = text.strip()
     text_length = len(text)
-    for i, char in enumerate(text):
+
+    i = 0
+    last_punctuation_pos = None
+    last_space_pos = None
+
+    while i < text_length:
+        char = text[i]
+        current_length = i - pos + 1
+
+        # Ghi nhớ vị trí dấu câu và dấu trắng
         if char in punctuation_marks or char in english_punctuation:
             if char == "." and i < text_length - 1 and re.match(r"\d", text[i + 1]):
+                i += 1
                 continue
+            last_punctuation_pos = i
+        elif char.isspace():
+            last_space_pos = i
 
-            current_length = i - pos
-            # Nếu chưa đạt threshold, cắt bình thường với mọi dấu câu
-            if current_length > max_chars:
-                result.append(text[pos : i + 1].strip())
-                pos = i + 1
-            # Nếu đã đạt hoặc vượt threshold, chỉ cắt khi gặp ".?"
-            elif current_length >= threshold and char in final_punctuation:
-                result.append(text[pos : i + 1].strip())
-                pos = i + 1
-            # Nếu chưa đạt threshold, tiếp tục bỏ qua (không cắt)
+        # Trường hợp đặc biệt: cho phép vượt max_chars nếu trong threshold_2 và kết thúc bằng "."
+        if (
+            current_length <= threshold_2
+            and char == "."
+            and (i == text_length - 1 or text[i + 1].isspace())
+        ):
+            result.append(text[pos : i + 1].strip())
+            pos = i + 1
+            i = pos
+            last_punctuation_pos = None
+            last_space_pos = None
+            continue
+
+        # Kiểm tra khi vượt quá max_chars
+        if current_length > max_chars:
+            # Nếu vượt threshold_2 thì không áp dụng trường hợp đặc biệt
+            if current_length > threshold_2:
+                # Ưu tiên cắt ở dấu câu trước max_chars
+                if (
+                    last_punctuation_pos is not None
+                    and last_punctuation_pos - pos + 1 <= max_chars
+                ):
+                    result.append(text[pos : last_punctuation_pos + 1].strip())
+                    pos = last_punctuation_pos + 1
+                # Nếu không có dấu câu, cắt ở dấu trắng
+                elif (
+                    last_space_pos is not None and last_space_pos - pos + 1 <= max_chars
+                ):
+                    result.append(text[pos:last_space_pos].strip())
+                    pos = last_space_pos + 1
+                # Nếu không có điểm cắt nào, tìm dấu trắng gần nhất trước max_chars
+                else:
+                    chunk = text[pos : pos + max_chars]
+                    last_space = chunk.rfind(" ")
+                    if last_space != -1:
+                        result.append(chunk[:last_space].strip())
+                        pos = pos + last_space + 1
+                    else:
+                        # Nếu không có dấu trắng nào trong max_chars, cắt ở dấu trắng cuối cùng trước đó
+                        if pos > 0:
+                            prev_chunk = text[:pos]
+                            last_space_before = prev_chunk.rfind(" ")
+                            if last_space_before != -1:
+                                result[-1] = prev_chunk[:last_space_before].strip()
+                                pos = last_space_before + 1
+                            else:
+                                pos += max_chars
+                        else:
+                            result.append(chunk.strip())
+                            pos += max_chars
+                i = pos
+                last_punctuation_pos = None
+                last_space_pos = None
+            # Nếu trong threshold_2, tiếp tục để kiểm tra dấu chấm
+        # Cắt ở ngưỡng 80% với dấu câu ưu tiên
+        elif current_length >= threshold and char in final_punctuation:
+            result.append(text[pos : i + 1].strip())
+            pos = i + 1
+            i = pos
+            last_punctuation_pos = None
+            last_space_pos = None
+
+        i += 1
+
     # Xử lý phần text còn lại
-    if pos < len(text):
-        result.append(text[pos:].strip())
+    if pos < text_length:
+        remaining = text[pos:].strip()
+        while remaining:
+            if len(remaining) <= max_chars or (
+                len(remaining) <= threshold_2 and remaining.endswith(".")
+            ):
+                result.append(remaining)
+                break
+
+            # Tìm điểm cắt cho phần còn lại
+            last_punctuation_pos = None
+            last_space_pos = None
+            for j, char in enumerate(remaining[:max_chars]):
+                if char in punctuation_marks or char in english_punctuation:
+                    if (
+                        char == "."
+                        and j < len(remaining) - 1
+                        and re.match(r"\d", remaining[j + 1])
+                    ):
+                        continue
+                    last_punctuation_pos = j
+                elif char.isspace():
+                    last_space_pos = j
+
+            if last_punctuation_pos is not None:
+                result.append(remaining[: last_punctuation_pos + 1].strip())
+                remaining = remaining[last_punctuation_pos + 1 :].strip()
+            elif last_space_pos is not None:
+                result.append(remaining[:last_space_pos].strip())
+                remaining = remaining[last_space_pos + 1 :].strip()
+            else:
+                chunk = remaining[:max_chars]
+                last_space = chunk.rfind(" ")
+                if last_space != -1:
+                    result.append(chunk[:last_space].strip())
+                    remaining = remaining[last_space + 1 :].strip()
+                else:
+                    if result:
+                        last_chunk = result.pop()
+                        last_space_before = last_chunk.rfind(" ")
+                        if last_space_before != -1:
+                            result.append(last_chunk[:last_space_before].strip())
+                            remaining = last_chunk[last_space_before + 1 :] + remaining
+                        else:
+                            result.append(last_chunk)
+                            result.append(chunk.strip())
+                            remaining = remaining[max_chars:].strip()
+                    else:
+                        result.append(chunk.strip())
+                        remaining = remaining[max_chars:].strip()
 
     return result
 
@@ -465,7 +731,7 @@ def preprocess_ref_audio_text(
 # infer process: chunk text -> infer batches [i.e. infer_batch_process()]
 
 
-def infer_process(
+def infer_process_v1(
     ref_audio,
     ref_text,
     gen_text,
@@ -494,10 +760,10 @@ def infer_process(
         / (audio.shape[-1] / sr)
         * (22 - audio.shape[-1] / sr)
     )
-    print("max_chars: ", max_chars)
-    gen_text_batches = chunk_text(gen_text, max_chars=130)
+
+    gen_text_batches = chunk_text(gen_text)
     for i, gen_text in enumerate(gen_text_batches):
-        print(f"gen_text {i}", gen_text)
+        print(f"gen_text {i}-{len(gen_text)}", gen_text)
     print("\n")
 
     show_info(f"Generating audio in {len(gen_text_batches)} batches...")
@@ -523,6 +789,80 @@ def infer_process(
 
 
 # infer batches
+
+
+def infer_process(
+    ref_audio,
+    ref_text,
+    gen_text,
+    model_obj,
+    vocoder,
+    mel_spec_type=mel_spec_type,
+    show_info=print,
+    progress=tqdm,
+    target_rms=target_rms,
+    cross_fade_duration=cross_fade_duration,
+    nfe_step=nfe_step,
+    cfg_strength=cfg_strength,
+    sway_sampling_coef=sway_sampling_coef,
+    speed=speed,
+    fix_duration=fix_duration,
+    device=device,
+):
+    # Chuỗi văn bản nháp để warm-up mô hình
+    warmup_text = (
+        "Đây là một câu văn bản nháp để khởi động mô hình."  # Có thể tùy chỉnh
+    )
+    warmup_text = post_process(TTSnorm(warmup_text, rule=False))
+    print(f"Warm-up text: {warmup_text}")
+
+    # Split the input text into batches
+    audio, sr = torchaudio.load(ref_audio)
+    ref_text = post_process(TTSnorm(ref_text, rule=False))
+    print(f"Norm ref_text: {ref_text}")
+    gen_text = post_process(TTSnorm(gen_text, rule=False))
+    print(f"Norm gen_text: {gen_text}")
+
+    max_chars = int(
+        len(ref_text.encode("utf-8"))
+        / (audio.shape[-1] / sr)
+        * (22 - audio.shape[-1] / sr)
+    )
+
+    # Thêm chuỗi nháp vào danh sách batches
+    gen_text_batches = [warmup_text] + chunk_text(gen_text)
+    for i, gen_text in enumerate(gen_text_batches):
+        print(f"gen_text {i}-{len(gen_text)}", gen_text)
+    print("\n")
+
+    show_info(
+        f"Generating audio in {len(gen_text_batches)} batches (including warm-up)..."
+    )
+
+    # Gọi infer_batch_process
+    result = next(
+        infer_batch_process(
+            (audio, sr),
+            ref_text,
+            gen_text_batches,
+            model_obj,
+            vocoder,
+            mel_spec_type=mel_spec_type,
+            progress=progress,
+            target_rms=target_rms,
+            cross_fade_duration=cross_fade_duration,
+            nfe_step=nfe_step,
+            cfg_strength=cfg_strength,
+            sway_sampling_coef=sway_sampling_coef,
+            speed=speed,
+            fix_duration=fix_duration,
+            device=device,
+        )
+    )
+
+    # Kiểm tra kết quả từ infer_batch_process
+    final_wave, final_sample_rate, combined_spectrogram = result
+    return final_wave, final_sample_rate, combined_spectrogram
 
 
 def infer_batch_process(
@@ -629,10 +969,15 @@ def infer_batch_process(
                 executor.submit(process_batch, gen_text)
                 for gen_text in gen_text_batches
             ]
-            for future in progress.tqdm(futures) if progress is not None else futures:
+            for i, future in enumerate(
+                progress.tqdm(futures) if progress is not None else futures
+            ):
                 result = future.result()
                 if result:
                     generated_wave, generated_mel_spec = next(result)
+                    # Bỏ qua batch đầu tiên (warm-up) nếu i == 0
+                    if i == 0:
+                        continue
                     generated_waves.append(generated_wave)
                     spectrograms.append(generated_mel_spec)
 

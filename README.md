@@ -278,6 +278,11 @@ install deepspeed==0.14.4
 ## vivoice_plus
 ln -s /media/anhlbt/SSD2/viVoice/* /media/anhlbt/SSD2/workspace/VOICE_TASK/F5-TTS/data/vivoice_char
 
+## anhlbt_tts
+ln -s /media/anhlbt/Book1/datasets/datasets_voice/VOICE_TASK/data_BaomoiCrawler/data/anhlbt_tts/* /media/anhlbt/SSD2/workspace/VOICE_TASK/F5-TTS/data/anhlbt_tts_char
+
+## ljspeech_dataset
+ln -s /media/anhlbt/SSD2/viVoice/* /media/anhlbt/SSD2/workspace/VOICE_TASK/F5-TTS/data/vivoice_char
 
 # # Liên kết tất cả file từ nguồn 1
 ln -s /media/anhlbt/Book/train_bert/wavs/*.wav /media/anhlbt/SSD2/workspace/VOICE_TASK/F5-TTS/data/vivoice_plus/wavs/
