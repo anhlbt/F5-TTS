@@ -137,7 +137,7 @@ def post_process(text):
 
 
 # chunk text into smaller pieces
-def chunk_text(text, max_chars=400):
+def chunk_text(text, max_chars=200):
     print("max_chars: ", max_chars)
     # Define length limits
     threshold_2 = int(max_chars * 1.2)  # 120% của max_chars - độ dài tối đa cho chunk
@@ -729,64 +729,6 @@ def preprocess_ref_audio_text(
 
 
 # infer process: chunk text -> infer batches [i.e. infer_batch_process()]
-
-
-def infer_process_v1(
-    ref_audio,
-    ref_text,
-    gen_text,
-    model_obj,
-    vocoder,
-    mel_spec_type=mel_spec_type,
-    show_info=print,
-    progress=tqdm,
-    target_rms=target_rms,
-    cross_fade_duration=cross_fade_duration,
-    nfe_step=nfe_step,
-    cfg_strength=cfg_strength,
-    sway_sampling_coef=sway_sampling_coef,
-    speed=speed,
-    fix_duration=fix_duration,
-    device=device,
-):
-    # Split the input text into batches
-    audio, sr = torchaudio.load(ref_audio)
-    ref_text = post_process(TTSnorm(ref_text, rule=False))
-    print("norm ref_text: ", ref_text)
-    gen_text = post_process(TTSnorm(gen_text, rule=False))
-    print("norm gen_text: ", gen_text)
-    max_chars = int(
-        len(ref_text.encode("utf-8"))
-        / (audio.shape[-1] / sr)
-        * (22 - audio.shape[-1] / sr)
-    )
-
-    gen_text_batches = chunk_text(gen_text)
-    for i, gen_text in enumerate(gen_text_batches):
-        print(f"gen_text {i}-{len(gen_text)}", gen_text)
-    print("\n")
-
-    show_info(f"Generating audio in {len(gen_text_batches)} batches...")
-    return next(
-        infer_batch_process(
-            (audio, sr),
-            ref_text,
-            gen_text_batches,
-            model_obj,
-            vocoder,
-            mel_spec_type=mel_spec_type,
-            progress=progress,
-            target_rms=target_rms,
-            cross_fade_duration=cross_fade_duration,
-            nfe_step=nfe_step,
-            cfg_strength=cfg_strength,
-            sway_sampling_coef=sway_sampling_coef,
-            speed=speed,
-            fix_duration=fix_duration,
-            device=device,
-        )
-    )
-
 
 # infer batches
 
