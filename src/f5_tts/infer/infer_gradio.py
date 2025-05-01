@@ -49,6 +49,8 @@ from f5_tts.infer.utils_infer import (
 
 DEFAULT_TTS_MODEL = "F5-TTS_v1"  # "Custom"  #
 tts_model_choice = DEFAULT_TTS_MODEL
+use_ema_value = True  # mặc định
+
 
 # DEFAULT_TTS_MODEL_CFG = [
 #     "hf://SWivid/F5-TTS/F5TTS_v1_Base/model_1250000.safetensors",
@@ -141,25 +143,36 @@ ckpt_folder = "/workspace/F5-TTS/ckpts/vivoice"
 ckpt_choices = get_ckpt_choices(ckpt_folder)
 
 
+def on_checkbox_change(new_value):
+    global use_ema_value
+    use_ema_value = new_value
+    print("Checkbox updated:", use_ema_value)
+
+
 def load_f5tts():
+    global use_ema_value
     # ckpt_path = str(cached_path(DEFAULT_TTS_MODEL_CFG[0]))
     ckpt_path = str(DEFAULT_TTS_MODEL_CFG[0])
     F5TTS_model_cfg = json.loads(DEFAULT_TTS_MODEL_CFG[2])
     vocab_file = str(DEFAULT_TTS_MODEL_CFG[1])
-    return load_model(DiT, F5TTS_model_cfg, ckpt_path, vocab_file=vocab_file)
+    return load_model(
+        DiT, F5TTS_model_cfg, ckpt_path, vocab_file=vocab_file, use_ema=use_ema_value
+    )
 
 
 def load_e2tts():
+    global use_ema_value
     ckpt_path = str(
         cached_path("hf://SWivid/E2-TTS/E2TTS_Base/model_1200000.safetensors")
     )
     E2TTS_model_cfg = dict(
         dim=1024, depth=24, heads=16, ff_mult=4, text_mask_padding=False, pe_attn_head=1
     )
-    return load_model(UNetT, E2TTS_model_cfg, ckpt_path)
+    return load_model(UNetT, E2TTS_model_cfg, ckpt_path, use_ema=use_ema_value)
 
 
 def load_custom(ckpt_path: str, vocab_path="", model_cfg=None):
+    global use_ema_value
     ckpt_path, vocab_path = ckpt_path.strip(), vocab_path.strip()
     if ckpt_path.startswith("hf://"):
         ckpt_path = str(cached_path(ckpt_path))
@@ -167,7 +180,9 @@ def load_custom(ckpt_path: str, vocab_path="", model_cfg=None):
         vocab_path = str(cached_path(vocab_path))
     if model_cfg is None:
         model_cfg = json.loads(DEFAULT_TTS_MODEL_CFG[2])
-    return load_model(DiT, model_cfg, ckpt_path, vocab_file=vocab_path)
+    return load_model(
+        DiT, model_cfg, ckpt_path, vocab_file=vocab_path, use_ema=use_ema_value
+    )
 
 
 F5TTS_ema_model = load_f5tts()
@@ -1927,6 +1942,7 @@ If you're having issues, try converting your reference audio to WAV or MP3, clip
 
     def set_custom_model(custom_ckpt_path, custom_vocab_path, custom_model_cfg):
         global tts_model_choice
+
         tts_model_choice = [
             "Custom",
             custom_ckpt_path,
@@ -1944,6 +1960,7 @@ If you're having issues, try converting your reference audio to WAV or MP3, clip
             )
 
     with gr.Row():
+
         if not USING_SPACES:
             choose_tts_model = gr.Radio(
                 choices=[DEFAULT_TTS_MODEL, "E2-TTS", "Custom"],
@@ -1956,6 +1973,15 @@ If you're having issues, try converting your reference audio to WAV or MP3, clip
                 label="Choose TTS Model",
                 value=DEFAULT_TTS_MODEL,
             )
+
+        ch_use_ema = gr.Checkbox(
+            label="Use EMA",
+            value=True,
+            interactive=True,
+            info="Turn off at early stage",
+        )
+        ch_use_ema.change(fn=on_checkbox_change, inputs=ch_use_ema, outputs=[])
+
         custom_ckpt_path = gr.Dropdown(
             choices=ckpt_choices,  # [DEFAULT_TTS_MODEL_CFG[0]],
             value=load_last_used_custom()[0],

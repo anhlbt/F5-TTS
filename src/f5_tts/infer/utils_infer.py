@@ -544,6 +544,7 @@ def load_checkpoint(model, ckpt_path, device: str, dtype=None, use_ema=True):
         checkpoint = load_file(ckpt_path, device=device)
     else:
         checkpoint = torch.load(ckpt_path, map_location=device, weights_only=True)
+    print(f"load checkpoint with use_ema={use_ema}")
 
     if use_ema:
         if ckpt_type == "safetensors":
