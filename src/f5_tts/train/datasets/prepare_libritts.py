@@ -21,7 +21,7 @@ def deal_with_audio_dir(audio_dir):
         text_path = line.with_suffix(".normalized.txt")
         text = open(text_path, "r").read().strip()
         duration = sf.info(line).duration
-        if duration < 0.3 or duration > 31:
+        if duration < 0.4 or duration > 30:
             continue
         sub_result.append({"audio_path": str(line), "text": text, "duration": duration})
         durations.append(duration)

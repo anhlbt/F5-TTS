@@ -1,0 +1,11 @@
+.cursorrules
+*.log
+*.wav
+voice_profiles/
+app/voice_profiles/
+*.pt
+__pycache__/
+PLAN.md
+# Exclude all .txt files except requirements.txt
+*.txt
+!requirements.txt

@@ -23,7 +23,7 @@ def main():
             norm_text = norm_text.strip()
             wav_path = Path(dataset_dir) / "wavs" / f"{uttr}.wav"
             duration = sf.info(wav_path).duration
-            if duration < 0.3 or duration > 31:
+            if duration < 0.4 or duration > 30:
                 continue
             result.append({"audio_path": str(wav_path), "text": norm_text, "duration": duration})
             duration_list.append(duration)

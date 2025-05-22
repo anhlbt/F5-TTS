@@ -57,7 +57,7 @@ class HFDataset(Dataset):
         sample_rate = row["audio"]["sampling_rate"]
         duration = audio.shape[-1] / sample_rate
 
-        if duration > 31 or duration < 0.3:
+        if duration > 30 or duration < 0.3:
             return self.__getitem__((index + 1) % len(self.data))
 
         audio_tensor = torch.from_numpy(audio).float()
@@ -137,7 +137,7 @@ class CustomDataset(Dataset):
             duration = row["duration"]
 
             # filter by given length
-            if 0.3 <= duration <= 31:
+            if 0.3 <= duration <= 30:
                 break  # valid
 
             index = (index + 1) % len(self.data)

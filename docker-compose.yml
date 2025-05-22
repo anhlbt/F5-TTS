@@ -25,7 +25,7 @@ services:
     environment:
       # - NVIDIA_VISIBLE_DEVICES=all # Cho phép sử dụng tất cả GPU NVIDIA
       # - NVIDIA_VISIBLE_DEVICES=1,0
-      - CUDA_VISIBLE_DEVICES=1,0
+      - CUDA_VISIBLE_DEVICES=1
       - SHELL=/bin/bash # Đặt shell mặc định
       - TZ=Asia/Ho_Chi_Minh
       - WORK_DIR=/workspace/F5-TTS
