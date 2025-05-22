@@ -61,7 +61,7 @@ use_ema_value = True  # mặc định
 # ]
 
 DEFAULT_TTS_MODEL_CFG = [
-    "/workspace/F5-TTS/ckpts/vivoice/model_last.pt",
+    "/workspace/F5-TTS/ckpts/vivoice/model_4015.pt",
     "/workspace/F5-TTS/ckpts/vivoice/vocab.txt",
     json.dumps(
         dict(dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4)
