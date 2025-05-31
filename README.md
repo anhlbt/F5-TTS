@@ -112,7 +112,7 @@ docker container run --rm -it --gpus=all --mount 'type=volume,source=f5-tts,targ
 Deployment solution with Triton and TensorRT-LLM.
 
 #### Benchmark Results
-Decoding on a single L20 GPU, using 26 different prompt_audio & target_text pairs.
+Decoding on a single L20 GPU, using 26 different prompt_audio & target_text pairs, 16 NFE.
 
 | Model               | Concurrency    | Avg Latency | RTF    | Mode            |
 |---------------------|----------------|-------------|--------|-----------------|
@@ -277,6 +277,8 @@ install deepspeed==0.14.4
 
 ## vivoice_plus
 ln -s /media/anhlbt/SSD2/viVoice/* /media/anhlbt/SSD2/workspace/VOICE_TASK/F5-TTS/data/vivoice_char
+
+ln -s /media/anhlbt/SSD2/viVoice/* /media/anhlbt/SSD2/workspace/VOICE_TASK/F5-TTS/data/vivoicebase_char
 
 ## anhlbt_tts
 ln -s /media/anhlbt/Book1/datasets/datasets_voice/VOICE_TASK/data_BaomoiCrawler/data/anhlbt_tts/* /media/anhlbt/SSD2/workspace/VOICE_TASK/F5-TTS/data/anhlbt_tts_char

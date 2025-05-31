@@ -1,8 +1,7 @@
-# A unified script for inference process
-# Make adjustments inside functions, and consider both gradio and cli scripts if need to change func output format
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from underthesea import word_tokenize
 
 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"  # for MPS device compatibility
@@ -18,6 +17,7 @@ from importlib.resources import files
 
 import matplotlib
 
+
 matplotlib.use("Agg")
 
 import matplotlib.pylab as plt
@@ -30,17 +30,24 @@ from pydub import AudioSegment, silence
 from transformers import pipeline
 from vocos import Vocos
 import re
+import json
 
 # from vfastpunct import VFastPunct
+import logging
+
+# Set up logging for silence insertion verification
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s | %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 from f5_tts.model import CFM
-from f5_tts.model.utils import (
-    get_tokenizer,
-    convert_char_to_pinyin,
-)
+from f5_tts.model.utils import convert_char_to_pinyin, get_tokenizer
+
 
 _ref_audio_cache = {}
+_ref_text_cache = {}
 
 device = (
     "cuda"
@@ -69,70 +76,16 @@ sway_sampling_coef = -1.0
 speed = 1.0
 fix_duration = None
 
-# -----------------------------------------
-break_words = [
-    "không chỉ thế mà còn",
-    "không chỉ vậy mà còn",
-    "trong khi đó",
-    "chẳng hạn như",
-    "ví dụ như",
-    "nói cách khác",
-    "cụ thể là",
-    "không chỉ",
-    "không những",
-    "mà còn",
-    "mặt khác",
-    "ngoài ra",
-    "hơn nữa",
-    "trái lại",
-    "ngược lại",
-    "trong khi",
-    "dẫu cho",
-    "dù cho",
-    "mặc cho",
-    "mặc kệ",
-    "miễn là",
-    "miễn sao",
-    "chỉ cần",
-    "đối với",
-    "như thể",
-    "theo đó",
-    "theo như",
-    "cùng lúc đó",
-    "cùng lúc",
-    "thậm chí",
-    "để cho",
-    "để",
-    "vì vậy",
-    "bởi vì",
-    "vì thế",
-    "do đó",
-    "do vậy",
-    "nếu như",
-    "hay",
-    "vì",
-    "nên",
-    "và",
-    "nhưng",
-    "rồi",
-    "lại",
-    "cũng",
-    "vẫn",
-    "như",
-    "nếu",
-    "khi",
-    "lúc",
-    "bởi",
-    "do",
-]
 
-
+#
 def post_process(text):
+
     replacements = {" . ": ". ", " .. ": ". ", " , ": ", ", " ! ": "! ", " ? ": "? "}
+    # replacements = {" .. ": " . "}
     for old, new in replacements.items():
         text = text.replace(old, new)
     # Thay thế một hoặc nhiều khoảng trắng bằng một khoảng trắng
-    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s+", " ", text).strip() + " "
     return text
 
 
@@ -232,197 +185,6 @@ def chunk_text(text, max_chars=200):
     return result
 
 
-def chunk_text_with_break_words(text, max_chars=115):
-    # Define length limits
-    threshold = int(max_chars * 0.8)  # 80% của max_chars
-    threshold_2 = int(max_chars * 1.2)  # 120% của max_chars
-    punctuation_marks = "。？！，、；：”’》」』）】…—"
-    english_punctuation = ".?!,:;)}…"
-    final_punctuation = ".?"  # Chỉ dùng các dấu này để cắt khi vượt ngưỡng 80%
-    # Results list
-    result = []
-    # Starting location
-    pos = 0
-    text = text.strip()
-    text_length = len(text)
-
-    i = 0
-    last_punctuation_pos = None
-    last_space_pos = None
-
-    while i < text_length:
-        char = text[i]
-        current_length = i - pos + 1
-
-        # Ghi nhớ vị trí dấu câu và dấu trắng
-        if char in punctuation_marks or char in english_punctuation:
-            if char == "." and i < text_length - 1 and re.match(r"\d", text[i + 1]):
-                i += 1
-                continue
-            last_punctuation_pos = i
-        elif char.isspace():
-            last_space_pos = i
-
-        # Trường hợp đặc biệt: cho phép vượt max_chars nếu trong threshold_2 và kết thúc bằng "."
-        if (
-            current_length <= threshold_2
-            and char == "."
-            and (i == text_length - 1 or text[i + 1].isspace())
-        ):
-            result.append(text[pos : i + 1].strip())
-            pos = i + 1
-            i = pos
-            last_punctuation_pos = None
-            last_space_pos = None
-            continue
-
-        # Kiểm tra khi vượt quá max_chars
-        if current_length > max_chars:
-            # Nếu vượt threshold_2 thì không áp dụng trường hợp đặc biệt
-            if current_length > threshold_2:
-                # Ưu tiên cắt ở dấu câu trước max_chars
-                if (
-                    last_punctuation_pos is not None
-                    and last_punctuation_pos - pos + 1 <= max_chars
-                ):
-                    result.append(text[pos : last_punctuation_pos + 1].strip())
-                    pos = last_punctuation_pos + 1
-                # Nếu không có dấu câu, cắt ở dấu trắng
-                elif (
-                    last_space_pos is not None and last_space_pos - pos + 1 <= max_chars
-                ):
-                    result.append(text[pos:last_space_pos].strip())
-                    pos = last_space_pos + 1
-                # Nếu không có điểm cắt nào, tìm dấu trắng gần nhất trước max_chars
-                else:
-                    chunk = text[pos : pos + max_chars]
-                    last_space = chunk.rfind(" ")
-                    if last_space != -1:
-                        result.append(chunk[:last_space].strip())
-                        pos = pos + last_space + 1
-                    else:
-                        # Nếu không có dấu trắng nào trong max_chars, cắt ở dấu trắng cuối cùng trước đó
-                        if pos > 0:
-                            prev_chunk = text[:pos]
-                            last_space_before = prev_chunk.rfind(" ")
-                            if last_space_before != -1:
-                                result[-1] = prev_chunk[:last_space_before].strip()
-                                pos = last_space_before + 1
-                            else:
-                                pos += max_chars
-                        else:
-                            result.append(chunk.strip())
-                            pos += max_chars
-                i = pos
-                last_punctuation_pos = None
-                last_space_pos = None
-            # Nếu trong threshold_2, tiếp tục để kiểm tra dấu chấm
-        # Cắt ở ngưỡng 80% với dấu câu ưu tiên
-        elif current_length >= threshold and char in final_punctuation:
-            result.append(text[pos : i + 1].strip())
-            pos = i + 1
-            i = pos
-            last_punctuation_pos = None
-            last_space_pos = None
-
-        i += 1
-
-    # Xử lý phần text còn lại
-    if pos < text_length:
-        remaining = text[pos:].strip()
-        while remaining:
-            if len(remaining) <= max_chars or (
-                len(remaining) <= threshold_2 and remaining.endswith(".")
-            ):
-                result.append(remaining)
-                break
-
-            # Tìm điểm cắt cho phần còn lại
-            last_punctuation_pos = None
-            last_space_pos = None
-            for j, char in enumerate(remaining[:max_chars]):
-                if char in punctuation_marks or char in english_punctuation:
-                    if (
-                        char == "."
-                        and j < len(remaining) - 1
-                        and re.match(r"\d", remaining[j + 1])
-                    ):
-                        continue
-                    last_punctuation_pos = j
-                elif char.isspace():
-                    last_space_pos = j
-
-            if last_punctuation_pos is not None:
-                result.append(remaining[: last_punctuation_pos + 1].strip())
-                remaining = remaining[last_punctuation_pos + 1 :].strip()
-            elif last_space_pos is not None:
-                result.append(remaining[:last_space_pos].strip())
-                remaining = remaining[last_space_pos + 1 :].strip()
-            else:
-                chunk = remaining[:max_chars]
-                last_space = chunk.rfind(" ")
-                if last_space != -1:
-                    result.append(chunk[:last_space].strip())
-                    remaining = remaining[last_space + 1 :].strip()
-                else:
-                    if result:
-                        last_chunk = result.pop()
-                        last_space_before = last_chunk.rfind(" ")
-                        if last_space_before != -1:
-                            result.append(last_chunk[:last_space_before].strip())
-                            remaining = last_chunk[last_space_before + 1 :] + remaining
-                        else:
-                            result.append(last_chunk)
-                            result.append(chunk.strip())
-                            remaining = remaining[max_chars:].strip()
-                    else:
-                        result.append(chunk.strip())
-                        remaining = remaining[max_chars:].strip()
-
-    return result
-
-
-def chunk_text_v1(text, max_chars=115):
-    """
-    Splits the input text into chunks, each with a maximum number of characters.
-
-    Args:
-        text (str): The text to be split.
-        max_chars (int): The maximum number of characters per chunk.
-
-    Returns:
-        List[str]: A list of text chunks.
-    """
-    chunks = []
-    current_chunk = ""
-    # Split the text into sentences based on punctuation followed by whitespace
-    sentences = re.split(r"(?<=[;:,.!?])\s+|(?<=[；：，。！？])", text)
-
-    for sentence in sentences:
-        if (
-            len(current_chunk.encode("utf-8")) + len(sentence.encode("utf-8"))
-            <= max_chars
-        ):
-            current_chunk += (
-                sentence + " "
-                if sentence and len(sentence[-1].encode("utf-8")) == 1
-                else sentence
-            )
-        else:
-            if current_chunk:
-                chunks.append(current_chunk.strip())
-            current_chunk = (
-                sentence + " "
-                if sentence and len(sentence[-1].encode("utf-8")) == 1
-                else sentence
-            )
-
-    if current_chunk:
-        chunks.append(current_chunk.strip())
-
-    return chunks
-
-
 # load vocoder
 def load_vocoder(
     vocoder_name="vocos",
@@ -481,7 +243,6 @@ def load_vocoder(
 
 
 # load asr pipeline
-
 asr_pipe = None
 
 
@@ -504,8 +265,6 @@ def initialize_asr_pipeline(device: str = device, dtype=None):
 
 
 # transcribe
-
-
 def transcribe(ref_audio, language=None):
     global asr_pipe
     if asr_pipe is None:
@@ -524,8 +283,6 @@ def transcribe(ref_audio, language=None):
 
 
 # load model checkpoint for inference
-
-
 def load_checkpoint(model, ckpt_path, device: str, dtype=None, use_ema=True):
     if dtype is None:
         dtype = (
@@ -576,8 +333,6 @@ def load_checkpoint(model, ckpt_path, device: str, dtype=None, use_ema=True):
 
 
 # load model for inference
-
-
 def load_model(
     model_cls,
     model_cfg,
@@ -639,17 +394,24 @@ def remove_silence_edges(audio, silence_threshold=-42):
     return trimmed_audio
 
 
-# preprocess reference audio and text
-
-
-def preprocess_ref_audio_text(
-    ref_audio_orig, ref_text, clip_short=True, show_info=print
-):
+def preprocess_ref_audio_text(ref_audio_orig, ref_text, show_info=print):
     show_info("Converting audio...")
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
-        aseg = AudioSegment.from_file(ref_audio_orig)
 
-        if clip_short:
+    # Compute a hash of the reference audio file
+    with open(ref_audio_orig, "rb") as audio_file:
+        audio_data = audio_file.read()
+        audio_hash = hashlib.md5(audio_data).hexdigest()
+
+    global _ref_audio_cache
+
+    if audio_hash in _ref_audio_cache:
+        show_info("Using cached preprocessed reference audio...")
+        ref_audio = _ref_audio_cache[audio_hash]
+
+    else:  # first pass, do preprocess
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
+            aseg = AudioSegment.from_file(ref_audio_orig)
+
             # 1. try to find long silence for clipping
             non_silent_segs = silence.split_on_silence(
                 aseg,
@@ -694,26 +456,24 @@ def preprocess_ref_audio_text(
                 aseg = aseg[:12000]
                 show_info("Audio is over 12s, clipping short. (3)")
 
-        aseg = remove_silence_edges(aseg) + AudioSegment.silent(duration=50)
-        aseg.export(f.name, format="wav")
-        ref_audio = f.name
+            aseg = remove_silence_edges(aseg) + AudioSegment.silent(duration=50)
+            aseg.export(f.name, format="wav")
+            ref_audio = f.name
 
-    # Compute a hash of the reference audio file
-    with open(ref_audio, "rb") as audio_file:
-        audio_data = audio_file.read()
-        audio_hash = hashlib.md5(audio_data).hexdigest()
+        # Cache the processed reference audio
+        _ref_audio_cache[audio_hash] = ref_audio
 
     if not ref_text.strip():
-        global _ref_audio_cache
-        if audio_hash in _ref_audio_cache:
+        global _ref_text_cache
+        if audio_hash in _ref_text_cache:
             # Use cached asr transcription
             show_info("Using cached reference text...")
-            ref_text = _ref_audio_cache[audio_hash]
+            ref_text = _ref_text_cache[audio_hash]
         else:
             show_info("No reference text provided, transcribing reference audio...")
             ref_text = transcribe(ref_audio)
             # Cache the transcribed text (not caching custom ref_text, enabling users to do manual tweak)
-            _ref_audio_cache[audio_hash] = ref_text
+            _ref_text_cache[audio_hash] = ref_text
     else:
         show_info("Using custom reference text...")
 
@@ -729,9 +489,33 @@ def preprocess_ref_audio_text(
     return ref_audio, ref_text
 
 
-# infer process: chunk text -> infer batches [i.e. infer_batch_process()]
-
-# infer batches
+def load_silence_durations(silence_durations):
+    """
+    Load silence durations from a JSON file, default dictionary, or provided dictionary.
+    Args:
+        silence_durations: Path to JSON file (str), dictionary, or None.
+    """
+    if isinstance(silence_durations, str):
+        if not os.path.exists(silence_durations):
+            raise FileNotFoundError(
+                f"Silence durations JSON file not found: {silence_durations}"
+            )
+        try:
+            with open(silence_durations, "r") as f:
+                loaded_durations = json.load(f)
+            if not isinstance(loaded_durations, dict):
+                raise ValueError("Silence durations JSON must contain a dictionary")
+            logger.info(f"Loaded silence durations from {silence_durations}")
+            return loaded_durations
+        except json.JSONDecodeError:
+            raise ValueError(f"Invalid JSON format in file: {silence_durations}")
+    elif silence_durations is None:
+        logger.info("Using default silence durations")
+        return {".": 0.5, ",": 0.3, "default": 0.1}
+    elif isinstance(silence_durations, dict):
+        return silence_durations
+    else:
+        raise ValueError("silence_durations must be a dictionary, file path, or None")
 
 
 def infer_process(
@@ -751,38 +535,46 @@ def infer_process(
     speed=speed,
     fix_duration=fix_duration,
     device=device,
+    silence_durations=None,
 ):
-    # Chuỗi văn bản nháp để warm-up mô hình
-    warmup_text = (
-        "Đây là một câu văn bản nháp để khởi động mô hình."  # Có thể tùy chỉnh
+    # Load silence durations
+    silence_durations = load_silence_durations(silence_durations)
+
+    # Warm-up text to initialize the model
+    warmup_text = "Đây là một câu văn bản nháp để khởi động mô hình."
+    warmup_text = post_process(
+        TTSnorm(warmup_text, punc=False, unknown=False, lower=True, rule=False)
     )
-    warmup_text = post_process(TTSnorm(warmup_text, rule=False))
     print(f"Warm-up text: {warmup_text}")
 
     # Split the input text into batches
     audio, sr = torchaudio.load(ref_audio)
-    ref_text = post_process(TTSnorm(ref_text, rule=False))
-    print(f"Norm ref_text: {ref_text}")
-    gen_text = post_process(TTSnorm(gen_text, rule=False))
-    print(f"Norm gen_text: {gen_text}")
+    ref_text = post_process(
+        TTSnorm(ref_text, punc=False, unknown=False, lower=True, rule=False)
+    )
+    print(f"Norm ref_text: {ref_text}|")
+    gen_text = post_process(
+        TTSnorm(gen_text, punc=True, unknown=False, lower=True, rule=False)
+    )
+    print(f"Norm gen_text: {gen_text}|")
 
     max_chars = int(
         len(ref_text.encode("utf-8"))
         / (audio.shape[-1] / sr)
         * (22 - audio.shape[-1] / sr)
+        * speed
     )
-
-    # Thêm chuỗi nháp vào danh sách batches
+    # Add warm-up text to batches
     gen_text_batches = [warmup_text] + chunk_text(gen_text)
     for i, gen_text in enumerate(gen_text_batches):
-        print(f"gen_text {i}-{len(gen_text)}", gen_text)
+        print(f"gen_text {i}-{len(gen_text)}", f"{gen_text}|")
     print("\n")
 
     show_info(
         f"Generating audio in {len(gen_text_batches)} batches (including warm-up)..."
     )
 
-    # Gọi infer_batch_process
+    # Call infer_batch_process with silence durations
     result = next(
         infer_batch_process(
             (audio, sr),
@@ -800,10 +592,10 @@ def infer_process(
             speed=speed,
             fix_duration=fix_duration,
             device=device,
+            silence_durations=silence_durations,
         )
     )
 
-    # Kiểm tra kết quả từ infer_batch_process
     final_wave, final_sample_rate, combined_spectrogram = result
     return final_wave, final_sample_rate, combined_spectrogram
 
@@ -826,7 +618,12 @@ def infer_batch_process(
     device=None,
     streaming=False,
     chunk_size=2048,
+    silence_durations=None,
 ):
+    # # Default silence durations
+    # if silence_durations is None:
+    #     silence_durations = {".": 0.5, ",": 0.3, "default": 0.1}
+
     audio, sr = ref_audio
     if audio.shape[0] > 1:
         audio = torch.mean(audio, dim=0, keepdim=True)
@@ -858,14 +655,13 @@ def infer_batch_process(
         if fix_duration is not None:
             duration = int(fix_duration * target_sample_rate / hop_length)
         else:
-            # Calculate duration
             ref_text_len = len(ref_text.encode("utf-8"))
             gen_text_len = len(gen_text.encode("utf-8"))
             duration = ref_audio_len + int(
                 ref_audio_len / ref_text_len * gen_text_len / local_speed
             )
 
-        # inference
+        # Inference
         with torch.inference_mode():
             generated, _ = model_obj.sample(
                 cond=audio,
@@ -877,7 +673,7 @@ def infer_batch_process(
             )
             del _
 
-            generated = generated.to(torch.float32)  # generated mel spectrogram
+            generated = generated.to(torch.float32)
             generated = generated[:, ref_audio_len:, :]
             generated = generated.permute(0, 2, 1)
             if mel_spec_type == "vocos":
@@ -887,15 +683,14 @@ def infer_batch_process(
             if rms < target_rms:
                 generated_wave = generated_wave * rms / target_rms
 
-            # wav -> numpy
             generated_wave = generated_wave.squeeze().cpu().numpy()
+            generated_cpu = generated[0].cpu().numpy()
+            del generated
 
             if streaming:
                 for j in range(0, len(generated_wave), chunk_size):
                     yield generated_wave[j : j + chunk_size], target_sample_rate
             else:
-                generated_cpu = generated[0].cpu().numpy()
-                del generated
                 yield generated_wave, generated_cpu
 
     if streaming:
@@ -918,68 +713,71 @@ def infer_batch_process(
                 result = future.result()
                 if result:
                     generated_wave, generated_mel_spec = next(result)
-                    # Bỏ qua batch đầu tiên (warm-up) nếu i == 0
+                    # Skip warm-up batch
                     if i == 0:
                         continue
                     generated_waves.append(generated_wave)
                     spectrograms.append(generated_mel_spec)
+
+                    # Add silence based on punctuation
+                    last_char = gen_text_batches[i][-1] if gen_text_batches[i] else ""
+                    silence_duration = silence_durations.get(
+                        last_char, silence_durations["default"]
+                    )
+                    silence_samples = int(silence_duration * target_sample_rate)
+                    silence_wave = np.zeros(silence_samples, dtype=generated_wave.dtype)
+                    generated_waves.append(silence_wave)
+                    logger.info(
+                        f"Added {silence_duration}s silence for batch {i}, last char: {last_char}"
+                    )
 
         if generated_waves:
             if cross_fade_duration <= 0:
                 # Simply concatenate
                 final_wave = np.concatenate(generated_waves)
             else:
-                # Combine all generated waves with cross-fading
-                final_wave = generated_waves[0]
-                for i in range(1, len(generated_waves)):
+                # Combine speech segments with cross-fading, concatenate silence directly
+                final_wave = generated_waves[0]  # First speech segment
+                for i in range(
+                    1, len(generated_waves), 2
+                ):  # Step by 2 for speech + silence
                     prev_wave = final_wave
-                    next_wave = generated_waves[i]
+                    next_wave = generated_waves[i]  # Speech segment
+                    silence_wave = (
+                        generated_waves[i + 1] if i + 1 < len(generated_waves) else None
+                    )
 
-                    # Calculate cross-fade samples, ensuring it does not exceed wave lengths
+                    # Cross-fade speech segments
                     cross_fade_samples = int(cross_fade_duration * target_sample_rate)
                     cross_fade_samples = min(
                         cross_fade_samples, len(prev_wave), len(next_wave)
                     )
 
                     if cross_fade_samples <= 0:
-                        # No overlap possible, concatenate
                         final_wave = np.concatenate([prev_wave, next_wave])
-                        continue
-
-                    # Overlapping parts
-                    prev_overlap = prev_wave[-cross_fade_samples:]
-                    next_overlap = next_wave[:cross_fade_samples]
-
-                    # Fade out and fade in
-                    fade_out = np.linspace(1, 0, cross_fade_samples)
-                    fade_in = np.linspace(0, 1, cross_fade_samples)
-
-                    # Cross-faded overlap
-                    cross_faded_overlap = (
-                        prev_overlap * fade_out + next_overlap * fade_in
-                    )
-
-                    # Combine
-                    new_wave = np.concatenate(
-                        [
-                            prev_wave[:-cross_fade_samples],
-                            cross_faded_overlap,
-                            next_wave[cross_fade_samples:],
-                        ]
-                    )
-
-                    final_wave = new_wave
-
+                    else:
+                        prev_overlap = prev_wave[-cross_fade_samples:]
+                        next_overlap = next_wave[:cross_fade_samples]
+                        fade_out = np.linspace(1, 0, cross_fade_samples)
+                        fade_in = np.linspace(0, 1, cross_fade_samples)
+                        cross_faded_overlap = (
+                            prev_overlap * fade_out + next_overlap * fade_in
+                        )
+                        final_wave = np.concatenate(
+                            [
+                                prev_wave[:-cross_fade_samples],
+                                cross_faded_overlap,
+                                next_wave[cross_fade_samples:],
+                            ]
+                        )
+                    # Append silence without cross-fading
+                    if silence_wave is not None:
+                        final_wave = np.concatenate([final_wave, silence_wave])
             # Create a combined spectrogram
             combined_spectrogram = np.concatenate(spectrograms, axis=1)
-
             yield final_wave, target_sample_rate, combined_spectrogram
-
         else:
             yield None, target_sample_rate, None
-
-
-# remove silence from generated wav
 
 
 def remove_silence_for_generated_wav(filename):
@@ -992,9 +790,6 @@ def remove_silence_for_generated_wav(filename):
         non_silent_wave += non_silent_seg
     aseg = non_silent_wave
     aseg.export(filename, format="wav")
-
-
-# save spectrogram
 
 
 def save_spectrogram(spectrogram, path):

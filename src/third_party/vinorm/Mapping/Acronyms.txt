@@ -3620,3 +3620,5 @@ SN#sinh năm
 IoT#ai ô tê
 LĐTB&XH#lao động thương binh và xã hội
 TCN#trước công nguyên
+IOT#ai ô ti
+AI#ây ai

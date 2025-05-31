@@ -18,14 +18,15 @@ services:
     volumes:
       - ./:/workspace/F5-TTS/ # Mount thư mục local F5-TTS vào container
       - /media/anhlbt/SSD1/cache:/root/.cache
-      - /media/anhlbt/Book/datasets/datasets_voice/VOICE_TASK/vivos_edited:/workspace/F5-TTS/data/vivos_char
+      # - /media/anhlbt/Book/datasets/datasets_voice/VOICE_TASK/vivos_edited:/workspace/F5-TTS/data/vivos_char
       - /media/anhlbt/SSD2/viVoice:/workspace/F5-TTS/data/vivoice_char
-      - /media/anhlbt/Book1/datasets/datasets_voice/VOICE_TASK/data_BaomoiCrawler/data/anhlbt_tts:/workspace/F5-TTS/data/anhlbt_tts_char
-      - /media/anhlbt/SSD2/workspace/WEB/StoryToolkitAI/SoniTranslate/ljspeech_dataset:/workspace/F5-TTS/data/ljspeech_dataset_char
+      # - /media/anhlbt/Book1/datasets/datasets_voice/VOICE_TASK/data_BaomoiCrawler/data/anhlbt_tts:/workspace/F5-TTS/data/anhlbt_tts_char
+      # - /media/anhlbt/SSD2/workspace/WEB/StoryToolkitAI/SoniTranslate/ljspeech_dataset:/workspace/F5-TTS/data/ljspeech_dataset_char
     environment:
       # - NVIDIA_VISIBLE_DEVICES=all # Cho phép sử dụng tất cả GPU NVIDIA
       # - NVIDIA_VISIBLE_DEVICES=1,0
-      - CUDA_VISIBLE_DEVICES=1
+      - GRADIO_PORT=7865
+      - CUDA_VISIBLE_DEVICES=1 #0: 3070, 1: 3060
       - SHELL=/bin/bash # Đặt shell mặc định
       - TZ=Asia/Ho_Chi_Minh
       - WORK_DIR=/workspace/F5-TTS
@@ -48,6 +49,43 @@ services:
       - "7865:7865" # Map port cho Gradio (web interface)
       - "6006:6006"
 
+  f5-tts-2:
+    shm_size: "8gb"
+    hostname: f5-tts-2
+    container_name: f5-tts-2
+    image: anhlbt/f5-tts-f5-tts:latest
+    volumes:
+      - ./:/workspace/F5-TTS/ # Mount thư mục local F5-TTS vào container
+      - /media/anhlbt/SSD1/cache:/root/.cache
+      - /media/anhlbt/SSD2/viVoice:/workspace/F5-TTS/data/vivoicebase_char
+      - /media/anhlbt/SSD2/viVoice:/workspace/F5-TTS/data/vivoice_char
+    environment:
+      # - NVIDIA_VISIBLE_DEVICES=all # Cho phép sử dụng tất cả GPU NVIDIA
+      # - NVIDIA_VISIBLE_DEVICES=1,0
+      - CUDA_VISIBLE_DEVICES=0 #1 3060 0 30701
+      - GRADIO_PORT=7866
+      - SHELL=/bin/bash # Đặt shell mặc định
+      - TZ=Asia/Ho_Chi_Minh
+      - WORK_DIR=/workspace/F5-TTS
+      - HF_HOME=/root/.cache/huggingface/hub
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              # count: 1  # Số lượng GPU, có thể đổi thành "all" nếu cần
+              # device_ids: ["0", "1"]
+              capabilities: [gpu, utility, video, compute]
+      # Lệnh chạy finetune_gradio.py
+    # network_mode: "host"
+    # command: "python src/f5_tts/train/finetune_gradio.py"
+    entrypoint: ["/bin/sh", "./run_finetune_gradio.sh"]
+    tty: true # Giữ container chạy tương tác
+    stdin_open: true # Cho phép nhập liệu từ terminal
+    ports:
+      - "7866:7866" # Map port cho Gradio (web interface)
+      - "6007:6007"
+
   f5-tts_infer:
     shm_size: "4gb"
     hostname: f5-tts_infer
@@ -56,7 +94,6 @@ services:
     volumes:
       - ./:/workspace/F5-TTS/ # Mount thư mục local F5-TTS vào container
       - /media/anhlbt/SSD1/cache:/root/.cache
-      - /media/anhlbt/Book/datasets/datasets_voice/VOICE_TASK/vivos_edited:/workspace/F5-TTS/data/vivos_char
       - /media/anhlbt/SSD2/viVoice:/workspace/F5-TTS/data/vivoice_char
       - /media/anhlbt/SSD2/workspace/VOICE_TASK/F5-TTS/ckpts:/workspace/F5-TTS/ckpts
     environment:
@@ -66,14 +103,14 @@ services:
       - WORK_DIR=/workspace/F5-TTS
       - HF_HOME=/root/.cache/huggingface/hub
     dns:
-    # ip route | awk '/default/ { print $3 }'
-    # sudo nano /etc/docker/daemon.json
-    # sudo systemctl restart docker
+      # ip route | awk '/default/ { print $3 }'
+      # sudo nano /etc/docker/daemon.json
+      # sudo systemctl restart docker
       - 172.21.88.1 # Địa chỉ DNS của host hoặc gateway: ip route | awk '/default/ { print $3 }'
       - 8.8.8.8
       - 8.8.4.4
       - 127.0.0.53
-      - 127.0.0.11         
+      - 127.0.0.11
     deploy:
       resources:
         reservations:
@@ -86,7 +123,7 @@ services:
     tty: true # Giữ container chạy tương tác
     stdin_open: true # Cho phép nhập liệu từ terminal
     ports:
-      - "7866:7866" # Map port cho Gradio (web interface)
+      - "7868:7868" # Map port cho Gradio (web interface)
       - "7867:7867" # api
 
   zookeeper:

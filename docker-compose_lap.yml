@@ -23,7 +23,8 @@ services:
       - /media/anhlbt/Book1/datasets/datasets_voice/VOICE_TASK/data_BaomoiCrawler/data/anhlbt_tts:/workspace/F5-TTS/data/anhlbt_tts_char
       - /media/anhlbt/SSD2/workspace/WEB/StoryToolkitAI/SoniTranslate/ljspeech_dataset:/workspace/F5-TTS/data/ljspeech_dataset_char
     environment:
-      - NVIDIA_VISIBLE_DEVICES=all # Cho phép sử dụng tất cả GPU NVIDIA
+      # - NVIDIA_VISIBLE_DEVICES=all # Cho phép sử dụng tất cả GPU NVIDIA
+      - CUDA_VISIBLE_DEVICES=1,0
       - SHELL=/bin/bash # Đặt shell mặc định
       - TZ=Asia/Ho_Chi_Minh
       - WORK_DIR=/workspace/F5-TTS
@@ -34,7 +35,7 @@ services:
           devices:
             - driver: nvidia
               # count: 1  # Số lượng GPU, có thể đổi thành "all" nếu cần
-              device_ids: ["1"]
+              # device_ids: ["1"]
               capabilities: [gpu, utility, video, compute]
       # Lệnh chạy finetune_gradio.py
     # network_mode: "host"

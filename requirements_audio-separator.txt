@@ -1,0 +1,12 @@
+audio-separator[gpu] 
+pypresence
+ml_collections
+beartype
+rotary-embedding-torch
+hjson
+bitarray
+sacrebleu
+diffq
+onnx-weekly
+onnx2torch-py313
+samplerate

@@ -49,17 +49,21 @@ RUN mkdir -p /workspace/F5-TTS/outputs \
     /workspace/F5-TTS/tools/ebook/Working_files/temp
 
 # Copy project files (assuming F5-TTS source is in the current directory)
-COPY . .
+# COPY . .
 
 #--no-cache-dir
+COPY requirements_audio-separator.txt ./
+COPY requirements.txt ./
+RUN pip install -r requirements_audio-separator.txt --no-deps
 RUN pip install -r requirements.txt
-RUN pip install underthesea
+
 # Upgrade pip and install Python dependencies
+COPY . .
 RUN pip install --upgrade pip \
     && pip install -e .
 
 RUN pip install markitdown[all]
-
+RUN pip install rnnoise
 # Install NLTK data
 RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt \
     && echo "Listing NLTK punkt data directory contents:" \
@@ -68,8 +72,6 @@ RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt \
 # Set NLTK data path
 ENV NLTK_DATA=/usr/local/share/nltk_data:/usr/share/nltk_data:/root/nltk_data
 
-# Preload ebook models
-# RUN python tools/ebook/preload_models.py
 
 # Set shell
 ENV SHELL=/bin/bash

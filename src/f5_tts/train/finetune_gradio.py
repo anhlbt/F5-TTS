@@ -1,14 +1,12 @@
 import gc
 import json
-import numpy as np
 import os
 import platform
-import psutil
 import queue
 import random
 import re
-import signal
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -16,11 +14,12 @@ import threading
 import time
 from glob import glob
 from importlib.resources import files
-from scipy.io import wavfile
 
 import click
 import gradio as gr
 import librosa
+import numpy as np
+import psutil
 import torch
 import torchaudio
 from cached_path import cached_path
@@ -32,9 +31,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from f5_tts.api import F5TTS
-from f5_tts.model.utils import convert_char_to_pinyin
 from f5_tts.infer.utils_infer import transcribe
-
+from f5_tts.model.utils import convert_char_to_pinyin
 
 from os.path import dirname, realpath, join
 
@@ -1365,7 +1363,7 @@ def vocab_extend(project_name, symbols, model_type):
     return f"vocab old size : {size_vocab}\nvocab new size : {size}\nvocab add : {vocab_size_new}\nnew symbols :\n{vocab_new}"
 
 
-def vocab_check(project_name):
+def vocab_check(project_name, tokenizer_type):
     name_project = project_name
     path_project = os.path.join(path_data, name_project)
 
@@ -1394,6 +1392,8 @@ def vocab_check(project_name):
             continue
 
         text = sp[1].lower().strip()
+        if tokenizer_type == "pinyin":
+            text = convert_char_to_pinyin([text], polyphone=True)[0]
 
         for t in text:
             if t not in vocab and t not in miss_symbols_keep:
@@ -1519,8 +1519,8 @@ def infer(
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
         tts_api.infer(
             ref_file=ref_audio,
-            ref_text=ref_text.lower().strip(),
-            gen_text=gen_text.lower().strip(),
+            ref_text=ref_text.lstrip(),
+            gen_text=gen_text.lstrip(),
             nfe_step=nfe_step,
             speed=speed,
             remove_silence=remove_silence,
@@ -1834,7 +1834,7 @@ Using the extended model, you can finetune to a new language that is missing sym
             )
             check_button.click(
                 fn=vocab_check,
-                inputs=[cm_project],
+                inputs=[cm_project, tokenizer_type],
                 outputs=[txt_info_check, txt_extend],
             )
             extend_button.click(
@@ -2298,12 +2298,13 @@ Reduce the Base model size from 5GB to 1.3GB. The new checkpoint file prunes out
 
 def main():
     global app
-    print("Starting app...")
+    port = int(os.getenv("GRADIO_PORT", "7865"))  # fallback nếu biến chưa có
+    print(f"run finetune with port {port}")
     app.queue(api_open=False).launch(
-        server_name="0.0.0.0", server_port=7865, share=True, show_api=False
+        server_name="0.0.0.0", server_port=port, share=True, show_api=False
     )
 
 
 if __name__ == "__main__":
-    print("hello world...")
+
     main()

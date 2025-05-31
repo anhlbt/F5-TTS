@@ -1,1 +1,1 @@
-(?i)\b(kp|q|p|h|tx|tp|x)\s?[.]\s?
+(?i)(?<!trên\s)(?<!đăng\s)(?<!viết\s)\b(kp|q|p|h|tx|tp|x)\s?[.]\s?(?=[A-Za-zÀ-Ỵà-ỹ0-9])

@@ -3136,3 +3136,7 @@ kw#kí lô quát
 SN#sinh năm
 IoT#ai ô tê
 TCN#trước công nguyên
+IOT#ai ô ti
+AI#ây ai
+X#ích
+X.#ích
